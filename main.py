@@ -19,7 +19,7 @@ class PlotWindow(QMainWindow):
         # Name the path to the directory
         self.shot = 40112
         self.current_directory = os.path.dirname(os.path.abspath(__file__))
-        self.file_path = self.current_directory + "/" + str(self.shot)
+        self.file_path = self.current_directory + "/../" + str(self.shot)
 
         # Set up the main window
         self.setWindowTitle('PyQtGraph Plot with Slider')
@@ -121,19 +121,20 @@ class PlotWindow(QMainWindow):
         #TODO: Find out where the x-axis starts (translation to the right)
 
         # Compute the spectrogram of the data
-        self.nperseg = self.params_fft.child('nperseg').value()
-        self.noverlap = self.params_fft.child('noverlap').value()
-        self.nfft = self.params_fft.child('nfft').value()
+        nperseg = self.params_fft.child('nperseg').value()
+        noverlap = self.params_fft.child('noverlap').value()
+        nfft = self.params_fft.child('nfft').value()
 
         fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
-        f, t, Sxx = spectrogram(self.y, fs=fs, nperseg=self.nperseg, noverlap=self.noverlap, nfft=self.nfft)
+        f, t, Sxx = spectrogram(self.y, fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
         
         # Note: `Sxx` needs to be transposed to fit the display format
         
         # Example: Transformed display of ImageItem
+        alpha_x = (nperseg-noverlap)/fs
         tr = QtGui.QTransform() # prepare ImageItem transformation
-        tr.scale(t[1] - t[0], f[1]) # scale horizontal and vertical axes
-        tr.translate(len(t)/(t[-1]-t[0])*1/fs*self.noverlap/2, 0)
+        tr.translate(noverlap/2/fs, 0)
+        tr.scale(alpha_x, f[1]) # scale horizontal and vertical axes
 
         i1 = pg.ImageItem(image=Sxx.T)
         i1.setTransform(tr) # assign transform
@@ -158,7 +159,7 @@ class PlotWindow(QMainWindow):
         self.plot_fft.setMouseEnabled(x=True, y=True)
         self.plot_fft.disableAutoRange()
         self.plot_fft.hideButtons()
-        #self.plot_fft.setRange(yRange=(0, 2.5e6), padding=0)
+        #self.plot_fft.setRange(xRange=(0, 25e-6), yRange=(0, 2.5e6), padding=0)
         self.plot_fft.showAxes(True, showValues=(True, False, False, True))
         self.plot_fft.setLabel('bottom', 'Time', units='s')
         self.plot_fft.setLabel('left', 'Frequency', units='Hz')
