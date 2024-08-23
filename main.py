@@ -42,6 +42,7 @@ class PlotWindow(QMainWindow):
         # Create the main graphics layout widget
         self.graph_layout = pg.GraphicsLayoutWidget()
         
+        #TODO: Correct the Vi Vq in the list
         # Create the parameter tree
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['Vi', 'Ka', 'Q', 'K']},
@@ -146,7 +147,7 @@ class PlotWindow(QMainWindow):
 
         i1 = pg.ImageItem(image=Sxx.T) # Note: `Sxx` needs to be transposed to fit the display format
         i1.setTransform(tr) # assign transform
-
+        
         self.plot_fft.clear()  # Clear previous plot
         self.plot_fft.addItem(i1)
         
@@ -197,6 +198,8 @@ class PlotWindow(QMainWindow):
         
         self.update_plot()
 
+    #TODO: Use the setLimits instead of the ifs and elses
+    #TODO: Set under limit of 10 to nperseg
     def update_fft_params(self):
         sender = self.sender()
         if sender == self.params_fft.child('nperseg'):
