@@ -42,10 +42,9 @@ class PlotWindow(QMainWindow):
         # Create the main graphics layout widget
         self.graph_layout = pg.GraphicsLayoutWidget()
         
-        #TODO: Correct the Vi Vq in the list
         # Create the parameter tree
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
-            {'name': 'Band', 'type': 'list', 'limits': ['Vi', 'Ka', 'Q', 'K']},
+            {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
             {'name': 'Side', 'type': 'list', 'limits': ['hfs', 'lfs']}
         ])
         self.params_sweep = Parameter.create(name='Sweep', type='group', children=[
@@ -117,12 +116,16 @@ class PlotWindow(QMainWindow):
         # Update the plot based on the slider value
         band = self.params_detector.child('Band').value()
         side = self.params_detector.child('Side').value()
+        if band == 'V':
+            signal = 'complex'
+        else:
+            signal = 'real'
 
         value = self.slider.value()
         sweep = value - 1
-        self.data = get_band_signal(40112, self.file_path, band, side, "real", sweep)
-        x = np.arange(len(self.data[0])) / get_sampling_frequency(self.shot, self.file_path)
-        y = self.data[0]
+        self.data = get_band_signal(40112, self.file_path, band, side, signal, sweep)[0]
+        x = np.arange(len(self.data)) / get_sampling_frequency(self.shot, self.file_path)
+        y = np.real(self.data)
         # Plot the data
         self.plot_sweep.clear()  # Clears the plot
         self.plot_sweep.plot(x, y, pen=pg.mkPen(color='r', width=2))
@@ -137,7 +140,7 @@ class PlotWindow(QMainWindow):
         colormap = self.params_fft.child('cmap').value()
 
         fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
-        f, t, Sxx = spectrogram(self.data[0], fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
+        f, t, Sxx = spectrogram(np.real(self.data), fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
         
         # Example: Transformed display of ImageItem
         alpha_x = (nperseg-noverlap)/fs
@@ -167,22 +170,26 @@ class PlotWindow(QMainWindow):
         # Configure plot appearance
         self.plot_fft.setMouseEnabled(x=True, y=True)
         self.plot_fft.disableAutoRange()
-        self.plot_fft.hideButtons()
+        #self.plot_fft.hideButtons()
         #self.plot_fft.setRange(xRange=(0, 25e-6), yRange=(0, 2.5e6), padding=0)
         self.plot_fft.showAxes(True, showValues=(True, False, False, True))
         self.plot_fft.setLabel('bottom', 'Time', units='s')
         self.plot_fft.setLabel('left', 'Frequency', units='Hz')
 
+
+    #TODO: Optimize this function so that it doesn't plot the same thing more than once
     def update_plot_params(self):
         sender = self.sender()
 
         if sender == self.slider:
+            print("a")
             value = self.slider.value()
             timestamp = get_timestamps(self.shot, self.file_path)[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value)
             self.params_sweep.child('Timestamp').setValue(timestamp)
 
         elif sender == self.params_sweep.child('Sweep nº'):
+            print("b")
             value = int(self.params_sweep.child('Sweep nº').value())
             self.params_sweep.child('Sweep nº').setValue(value)
             self.slider.setValue(value)
@@ -190,40 +197,25 @@ class PlotWindow(QMainWindow):
             self.params_sweep.child('Timestamp').setValue(timestamp)
             
         elif sender == self.params_sweep.child('Timestamp'):
+            print("c")
             value = self.params_sweep.child('Timestamp').value()
             timestamp = round_to_nearest(value, get_timestamps(self.shot, self.file_path))
             index = np.where(get_timestamps(self.shot, self.file_path) == timestamp)
             self.slider.setValue(index[0][0] + 1)
             self.params_sweep.child('Sweep nº').setValue(index[0][0] + 1)
         
+        print("plot")
         self.update_plot()
 
-    #TODO: Use the setLimits instead of the ifs and elses
-    #TODO: Set under limit of 10 to nperseg
     def update_fft_params(self):
-        sender = self.sender()
-        if sender == self.params_fft.child('nperseg'):
-            if self.params_fft.child('nperseg').value() <= 0:
-                self.params_fft.child('nperseg').setValue(1)
-            elif self.params_fft.child('nperseg').value() > len(self.data[0]):
-                self.params_fft.child('nperseg').setValue(len(self.data[0]))
+        self.params_fft.child('nperseg').setLimits((10, len(self.data)))
+        self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
+        self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
+        
 
-            if self.params_fft.child('noverlap').value() >= self.params_fft.child('nperseg').value():
-                self.params_fft.child('noverlap').setValue(self.params_fft.child('nperseg').value() - 1) 
-            if self.params_fft.child('nfft').value() < self.params_fft.child('nperseg').value():
-                self.params_fft.child('nfft').setValue(self.params_fft.child('nperseg').value())
-
-        elif sender == self.params_fft.child('noverlap'):
-            if self.params_fft.child('noverlap').value() >= self.params_fft.child('nperseg').value():
-                self.params_fft.child('noverlap').setValue(self.params_fft.child('nperseg').value() - 1)
-            elif self.params_fft.child('noverlap').value() < 0:
-                self.params_fft.child('noverlap').setValue(0)
-
-        elif sender == self.params_fft.child('nfft'):
-            if self.params_fft.child('nfft').value() < self.params_fft.child('nperseg').value():
-                self.params_fft.child('nfft').setValue(self.params_fft.child('nperseg').value())
-            
-        self.update_fft()
+        if self.params_fft.child('noverlap').value() < self.params_fft.child('nperseg').value(): #This condition because the setdefault of the noverlap has some strange order of events
+            print("fft")
+            self.update_fft()
         
 
 if __name__ == '__main__':
