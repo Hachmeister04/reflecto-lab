@@ -1,1 +1,2 @@
-int
+import pyqtgraph.examples
+pyqtgraph.examples.run()
