@@ -9,9 +9,13 @@ from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
 from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation
 from func_aux import round_to_nearest
+import time
 
 #TODO: Remove hardcoded values and add them here
 MAX_BURST_SIZE = 285
+DEFAULT_NPERSEG = 256
+DEFAULT_NOVERLAP = 255
+DEFAULT_NFFT = 512
 
 #TODO: Make all calls to pyqtgraph directly. Do not use Qt to draw windows
 class PlotWindow(QMainWindow):
@@ -39,14 +43,10 @@ class PlotWindow(QMainWindow):
         # Create a QSplitter for adjustable layout
         self.splitter = QSplitter(Qt.Horizontal, self.central_widget)
 
-        # Create the main graphics and slider widget and a layout for it
-        self.graph_slider_widget = QWidget()
-        self.graph_slider_layout = QVBoxLayout(self.graph_slider_widget)
-
         # Create the main graphics layout widget
         self.graph_layout = pg.GraphicsLayoutWidget()
         
-        #TODO: Fix the scientific notation in the parameters
+        #TODO: Fix the displayed value in the parameters
         # Create the parameter tree
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
@@ -58,10 +58,10 @@ class PlotWindow(QMainWindow):
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True},
         ])
         self.params_fft = Parameter.create(name='FFT', type='group', children=[
-            {'name': 'nperseg', 'type': 'int', 'value': 256},
-            {'name': 'noverlap', 'type': 'int', 'value': 255},
-            {'name': 'nfft', 'type': 'int', 'value': 2048},
-            {'name': 'burst size (odd)', 'type': 'int', 'value': 1, 'limits': (1, MAX_BURST_SIZE)},
+            {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG},
+            {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP},
+            {'name': 'nfft', 'type': 'float', 'value': DEFAULT_NFFT},
+            {'name': 'burst size (odd)', 'type': 'float', 'value': 1, 'limits': (1, MAX_BURST_SIZE)},
             {'name': 'cmap', 'type': 'cmaplut', 'value': 'plasma'}
         ])
         self.param_tree = ParameterTree()
@@ -76,33 +76,16 @@ class PlotWindow(QMainWindow):
         self.plot_fft = self.graph_layout.addPlot(title="FFT")
         #self.plot_fft.setFixedWidth(600)
         
-        # Create and add the slider
-        """ self.slider = QSlider(Qt.Horizontal)
-        self.slider.setMinimum(1)
-        self.slider.setMaximum(len(get_timestamps(self.shot, self.file_path)))
-        self.slider.setValue(1)
-        self.slider.setTickPosition(QSlider.TicksBelow)
-        self.slider.setTickInterval(1)
-        self.graph_slider_layout.addWidget(self.slider) """
-        
         # Add widgets and layouts---------------------------------------------------
-
-        # Add the graph and the slider to the graph and slider layout
-        self.graph_slider_layout.addWidget(self.graph_layout)
-        #self.graph_slider_layout.addWidget(self.slider)
         
         # Add widgets to the splitter
         self.splitter.addWidget(self.param_tree)
-        self.splitter.addWidget(self.graph_slider_widget)
+        self.splitter.addWidget(self.graph_layout)
         
         # Add the splitter to the main layout
         self.layout.addWidget(self.splitter)
 
-        #---------------------------------------------------------------------------
-
-        self.update_plot()
-
-        #---------------------------------------------------------------------------
+        # Connect the parameters to the functions-----------------------------------
 
         # Connect the lists to update the plot
         self.params_detector.child('Band').sigValueChanged.connect(self.update_plot)
@@ -118,10 +101,17 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('burst size (odd)').sigValueChanged.connect(self.update_fft_params)
-        self.params_fft.child('cmap').sigValueChanged.connect(self.update_fft)
+        self.params_fft.child('cmap').sigValueChanged.connect(self.update_fft_params)
+
+        #---------------------------------------------------------------------------
+
+        self.update_plot()
+
+        self.params_fft.child('nperseg').setLimits((10, len(self.data)))
+        self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
+        self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
     
     def update_plot(self):
-        # Update the plot based on the slider value
         self.band = self.params_detector.child('Band').value()
         self.side = self.params_detector.child('Side').value()
         if self.band == 'V':
@@ -142,12 +132,13 @@ class PlotWindow(QMainWindow):
     
     def update_fft(self):
         # Compute the spectrogram of the data
-        burst_size = self.params_fft.child('burst size (odd)').value()
+        start_time = time.time()
+        burst_size = int(self.params_fft.child('burst size (odd)').value())
         burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - burst_size // 2, burst_size)
         
-        nperseg = self.params_fft.child('nperseg').value()
-        noverlap = self.params_fft.child('noverlap').value()
-        nfft = self.params_fft.child('nfft').value()
+        nperseg = int(self.params_fft.child('nperseg').value())
+        noverlap = int(self.params_fft.child('noverlap').value())
+        nfft = int(self.params_fft.child('nfft').value())
         colormap = self.params_fft.child('cmap').value()
 
         fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
@@ -190,20 +181,18 @@ class PlotWindow(QMainWindow):
         self.plot_fft.setLabel('bottom', 'Time', units='s')
         self.plot_fft.setLabel('left', 'Frequency', units='Hz')
         print("fft")
+        print("--- %s seconds ---" % (time.time() - start_time))
 
-    #TODO: Optimize this function so that it doesn't plot the same thing more than once
     def update_plot_params(self):
         sender = self.sender()
 
         if sender == self.params_sweep.child('Sweep'):
-            print("a")
             value = self.params_sweep.child('Sweep').value()
             timestamp = get_timestamps(self.shot, self.file_path)[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
 
         elif sender == self.params_sweep.child('Sweep nº'):
-            print("b")
             value = int(self.params_sweep.child('Sweep nº').value())
             timestamp = get_timestamps(self.shot, self.file_path)[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value, blockSignal=self.update_plot_params)
@@ -211,7 +200,6 @@ class PlotWindow(QMainWindow):
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             
         elif sender == self.params_sweep.child('Timestamp'):
-            print("c")
             value = self.params_sweep.child('Timestamp').value()
             timestamp = round_to_nearest(value, get_timestamps(self.shot, self.file_path))
             index = np.where(get_timestamps(self.shot, self.file_path) == timestamp)
@@ -226,19 +214,32 @@ class PlotWindow(QMainWindow):
         sender = self.sender()
 
         if sender == self.params_fft.child('burst size (odd)'):
-            if self.params_fft.child('burst size (odd)').value() % 2 == 0:
-                self.params_fft.child('burst size (odd)').setValue(self.params_fft.child('burst size (odd)').value() - 1)
-            lower_limit = 1 + self.params_fft.child('burst size (odd)').value() // 2
-            upper_limit = len(get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2
+            value = int(self.params_fft.child('burst size (odd)').value())
+            if value % 2 == 0:
+                self.params_fft.child('burst size (odd)').setValue(value - 1, blockSignal=self.update_fft_params)
+            else:
+                self.params_fft.child('burst size (odd)').setValue(value, blockSignal=self.update_fft_params)
+            lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
+            upper_limit = int(len(get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
             self.params_sweep.child('Sweep').setLimits([lower_limit, upper_limit])
             self.params_sweep.child('Sweep nº').setLimits([lower_limit, upper_limit])
-        else:
-            self.params_fft.child('nperseg').setLimits((10, len(self.data)))
+            #TODO: Set limit of the timestamp
+
+        elif sender == self.params_fft.child('nperseg'):
+            value = int(self.params_fft.child('nperseg').value())
+            self.params_fft.child('nperseg').setValue(value, blockSignal=self.update_fft_params)
             self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
             self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
         
-        if self.params_fft.child('noverlap').value() < self.params_fft.child('nperseg').value(): #This condition because the setdefault of the noverlap has some strange order of events
-            self.update_fft()
+        elif sender == self.params_fft.child('noverlap'):
+            value = int(self.params_fft.child('noverlap').value())
+            self.params_fft.child('noverlap').setValue(value, blockSignal=self.update_fft_params)
+        
+        elif sender == self.params_fft.child('nfft'):
+            value = int(self.params_fft.child('nfft').value())
+            self.params_fft.child('nfft').setValue(value, blockSignal=self.update_fft_params)
+        
+        self.update_fft()
         
 
 if __name__ == '__main__':
