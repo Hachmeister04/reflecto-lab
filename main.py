@@ -10,6 +10,9 @@ from pyqtgraph.parametertree import Parameter, ParameterTree
 from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation
 from func_aux import round_to_nearest
 
+#TODO: Remove hardcoded values and add them here
+MAX_BURST_SIZE = 285
+
 class PlotWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -55,6 +58,7 @@ class PlotWindow(QMainWindow):
             {'name': 'nperseg', 'type': 'int', 'value': 256},
             {'name': 'noverlap', 'type': 'int', 'value': 255},
             {'name': 'nfft', 'type': 'int', 'value': 2048},
+            {'name': 'burst size (odd)', 'type': 'int', 'value': 1, 'limits': (1, MAX_BURST_SIZE)},
             {'name': 'cmap', 'type': 'cmaplut', 'value': 'plasma'}
         ])
         self.param_tree = ParameterTree()
@@ -110,20 +114,21 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('nperseg').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
+        self.params_fft.child('burst size (odd)').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('cmap').sigValueChanged.connect(self.update_fft)
     
     def update_plot(self):
         # Update the plot based on the slider value
-        band = self.params_detector.child('Band').value()
-        side = self.params_detector.child('Side').value()
-        if band == 'V':
-            signal = 'complex'
+        self.band = self.params_detector.child('Band').value()
+        self.side = self.params_detector.child('Side').value()
+        if self.band == 'V':
+            self.signal = 'complex'
         else:
-            signal = 'real'
+            self.signal = 'real'
 
         value = self.slider.value()
-        sweep = value - 1
-        self.data = get_band_signal(40112, self.file_path, band, side, signal, sweep)[0]
+        self.sweep = value - 1
+        self.data = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep)[0]
         x = np.arange(len(self.data)) / get_sampling_frequency(self.shot, self.file_path)
         y = np.real(self.data)
         # Plot the data
@@ -134,14 +139,20 @@ class PlotWindow(QMainWindow):
     
     def update_fft(self):
         # Compute the spectrogram of the data
+        self.burst_size = self.params_fft.child('burst size (odd)').value()
+        self.burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - self.burst_size // 2, self.burst_size)
+        
         nperseg = self.params_fft.child('nperseg').value()
         noverlap = self.params_fft.child('noverlap').value()
         nfft = self.params_fft.child('nfft').value()
         colormap = self.params_fft.child('cmap').value()
 
         fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
-        f, t, Sxx = spectrogram(np.real(self.data), fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
+        f, t, Sxx = spectrogram(np.real(self.burst), fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
         
+        # Calculate average of the burst
+        Sxx = np.average(Sxx, axis=0)
+
         # Example: Transformed display of ImageItem
         alpha_x = (nperseg-noverlap)/fs
         tr = QtGui.QTransform() # prepare ImageItem transformation
@@ -175,7 +186,7 @@ class PlotWindow(QMainWindow):
         self.plot_fft.showAxes(True, showValues=(True, False, False, True))
         self.plot_fft.setLabel('bottom', 'Time', units='s')
         self.plot_fft.setLabel('left', 'Frequency', units='Hz')
-
+        print("fft1")
 
     #TODO: Optimize this function so that it doesn't plot the same thing more than once
     def update_plot_params(self):
@@ -211,10 +222,11 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('nperseg').setLimits((10, len(self.data)))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
+        self.slider.setMinimum(1 + self.params_fft.child('burst size (odd)').value() // 2)
+        self.slider.setMaximum(len(get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
         
-
         if self.params_fft.child('noverlap').value() < self.params_fft.child('nperseg').value(): #This condition because the setdefault of the noverlap has some strange order of events
-            print("fft")
+            print("fft2")
             self.update_fft()
         
 
