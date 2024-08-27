@@ -25,10 +25,10 @@ class PlotWindow(QMainWindow):
         #---------------------------------------------------------------------------
 
         # Set the application icon
-        self.setWindowIcon(QtGui.QIcon('path/to/your/icon.png'))  # Replace with the path to your icon
+        self.setWindowIcon(QtGui.QIcon('reflecto-lab.png'))  # Replace with the path to your icon
 
         # Set up the main window
-        self.setWindowTitle('PyQtGraph Plot with Slider')
+        self.setWindowTitle('ReflectoLab')
         self.setGeometry(100, 100, 1600, 800)
         
         # Create layouts and widgets------------------------------------------------
