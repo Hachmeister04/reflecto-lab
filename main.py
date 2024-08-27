@@ -1,14 +1,13 @@
 import sys
-import os
 import numpy as np
 from scipy.signal import spectrogram
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QSlider, QHBoxLayout, QSplitter
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QSplitter
 from PyQt5.QtCore import Qt
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
 from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation
-from func_aux import round_to_nearest
+from func_aux import round_to_nearest, shot
 import time
 
 #TODO: Remove hardcoded values and add them here
@@ -23,11 +22,6 @@ class PlotWindow(QMainWindow):
         super().__init__()
         
         #---------------------------------------------------------------------------
-
-        # Name the path to the directory
-        self.shot = 40112
-        self.current_directory = os.path.dirname(os.path.abspath(__file__))
-        self.file_path = self.current_directory + "/../" + str(self.shot)
 
         # Set up the main window
         self.setWindowTitle('PyQtGraph Plot with Slider')
@@ -48,13 +42,16 @@ class PlotWindow(QMainWindow):
         
         #TODO: Fix the displayed value in the parameters
         # Create the parameter tree
+        self.params_file = Parameter.create(name='File', type='group', children=[
+            {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'}
+        ])
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
             {'name': 'Side', 'type': 'list', 'limits': ['hfs', 'lfs']}
         ])
         self.params_sweep = Parameter.create(name='Sweep', type='group', children=[
-            {'name': 'Sweep', 'type': 'slider', 'limits': [1, len(get_timestamps(self.shot, self.file_path))]},
-            {'name': 'Sweep nº', 'type': 'float', 'value': 1, 'limits': [1, len(get_timestamps(self.shot, self.file_path))]},
+            {'name': 'Sweep', 'type': 'slider', 'limits': (1, 1)},
+            {'name': 'Sweep nº', 'type': 'float', 'value': 1},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True},
         ])
         self.params_fft = Parameter.create(name='FFT', type='group', children=[
@@ -65,9 +62,7 @@ class PlotWindow(QMainWindow):
             {'name': 'cmap', 'type': 'cmaplut', 'value': 'plasma'}
         ])
         self.param_tree = ParameterTree()
-        self.param_tree.addParameters(self.params_detector, showTop=True)
-        self.param_tree.addParameters(self.params_sweep, showTop=True)
-        self.param_tree.addParameters(self.params_fft, showTop=True)
+        self.param_tree.addParameters(self.params_file)
 
         # Create the first plot
         self.plot_sweep = self.graph_layout.addPlot(title="Sweep")
@@ -76,6 +71,9 @@ class PlotWindow(QMainWindow):
         self.plot_fft = self.graph_layout.addPlot(title="FFT")
         #self.plot_fft.setFixedWidth(600)
         
+        # Connect the file to the function that displays the rest of the parameters and the graphs
+        self.params_file.child('Open').sigValueChanged.connect(self.update_display)
+
         # Add widgets and layouts---------------------------------------------------
         
         # Add widgets to the splitter
@@ -84,6 +82,23 @@ class PlotWindow(QMainWindow):
         
         # Add the splitter to the main layout
         self.layout.addWidget(self.splitter)
+    
+    def update_display(self):
+
+        # Name the path to the directory
+        self.file_path = self.params_file.child('Open').value()
+        self.shot = shot(self.file_path)
+
+        try:
+            self.param_tree.removeTopLevelItem(self.params_detector)
+            self.param_tree.removeTopLevelItem(self.params_sweep)
+            self.param_tree.removeTopLevelItem(self.params_fft)
+        except Exception:
+            pass
+        
+        self.param_tree.addParameters(self.params_detector)
+        self.param_tree.addParameters(self.params_sweep)
+        self.param_tree.addParameters(self.params_fft)
 
         # Connect the parameters to the functions-----------------------------------
 
@@ -107,10 +122,12 @@ class PlotWindow(QMainWindow):
 
         self.update_plot()
 
+        self.params_sweep.child('Sweep').setLimits((1, len(get_timestamps(self.shot, self.file_path))))
+        self.params_sweep.child('Sweep nº').setLimits((1, len(get_timestamps(self.shot, self.file_path))))
         self.params_fft.child('nperseg').setLimits((10, len(self.data)))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
-    
+        
     def update_plot(self):
         self.band = self.params_detector.child('Band').value()
         self.side = self.params_detector.child('Side').value()
@@ -184,6 +201,7 @@ class PlotWindow(QMainWindow):
         print("--- %s seconds ---" % (time.time() - start_time))
 
     def update_plot_params(self):
+        #TODO: Don't redraw the graphs if the values are the same
         sender = self.sender()
 
         if sender == self.params_sweep.child('Sweep'):
@@ -223,7 +241,7 @@ class PlotWindow(QMainWindow):
             upper_limit = int(len(get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
             self.params_sweep.child('Sweep').setLimits([lower_limit, upper_limit])
             self.params_sweep.child('Sweep nº').setLimits([lower_limit, upper_limit])
-            #TODO: Set limit of the timestamp
+            self.params_sweep.child('Timestamp').setLimits([get_timestamps(self.shot, self.file_path)[lower_limit - 1], get_timestamps(self.shot, self.file_path)[upper_limit - 1]])
 
         elif sender == self.params_fft.child('nperseg'):
             value = int(self.params_fft.child('nperseg').value())
