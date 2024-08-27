@@ -135,6 +135,7 @@ class PlotWindow(QMainWindow):
         #---------------------------------------------------------------------------
 
         self.update_plot()
+        self.update_fft()
 
         # Set limits to the parameters----------------------------------------------
 
@@ -161,8 +162,6 @@ class PlotWindow(QMainWindow):
         self.plot_sweep.plot(x, y, pen=pg.mkPen(color='r', width=2))
         self.plot_sweep.setLabel('bottom', 'Time', units='s')
         print("plot")
-        #TODO: Don't call update_fft inside this function
-        self.update_fft()
     
     def update_fft(self):
         start_time = time.time()
@@ -244,6 +243,7 @@ class PlotWindow(QMainWindow):
             self.params_sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
         
         self.update_plot()
+        self.update_fft()
 
     #TODO: Optimize this function so that it doesn't fft the same thing more than once
     def update_fft_params(self):
