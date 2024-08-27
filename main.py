@@ -18,12 +18,14 @@ DEFAULT_NFFT = 512
 MIN_NPERSEG = 10
 MAX_NFFT = np.inf
 
-#TODO: Make all calls to pyqtgraph directly. Do not use Qt to draw windows
 class PlotWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        
+
         #---------------------------------------------------------------------------
+
+        # Set the application icon
+        self.setWindowIcon(QtGui.QIcon('path/to/your/icon.png'))  # Replace with the path to your icon
 
         # Set up the main window
         self.setWindowTitle('PyQtGraph Plot with Slider')
@@ -43,7 +45,6 @@ class PlotWindow(QMainWindow):
         self.graph_layout = pg.GraphicsLayoutWidget()
         
         #TODO: Fix the displayed value in the parameters
-        #TODO: Add the parameters to a different file
         # Create the parameter tree
         self.params_file = Parameter.create(name='File', type='group', children=[
             {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'},
@@ -70,13 +71,14 @@ class PlotWindow(QMainWindow):
 
         # Create the first plot
         self.plot_sweep = self.graph_layout.addPlot(title="Sweep")
-        
+
+        self.graph_layout.nextRow()
+
         # Create the second plot next to the first one
         self.plot_fft = self.graph_layout.addPlot(title="FFT")
-        #self.plot_fft.setFixedWidth(600)
 
         # Add widgets and layouts---------------------------------------------------
-        
+
         # Add widgets to the splitter
         self.splitter.addWidget(self.param_tree)
         self.splitter.addWidget(self.graph_layout)
@@ -148,6 +150,8 @@ class PlotWindow(QMainWindow):
     def update_plot(self):
         self.band = self.params_detector.child('Band').value()
         self.side = self.params_detector.child('Side').value()
+        self.sweep = int(self.params_sweep.child('Sweep nº').value()) - 1
+
         if self.band == 'V':
             self.signal = 'complex'
         else:
@@ -167,16 +171,15 @@ class PlotWindow(QMainWindow):
         start_time = time.time()
 
         # Compute the spectrogram of the data
-        burst_size = int(self.params_fft.child('burst size (odd)').value())
-        burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - burst_size // 2, burst_size)
-        
         nperseg = int(self.params_fft.child('nperseg').value())
         noverlap = int(self.params_fft.child('noverlap').value())
         nfft = int(self.params_fft.child('nfft').value())
+        burst_size = int(self.params_fft.child('burst size (odd)').value())
         colormap = self.params_fft.child('cmap').value()
 
+        self.burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - burst_size // 2, burst_size)
         fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
-        f, t, Sxx = spectrogram(np.real(burst), fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
+        f, t, Sxx = spectrogram(np.real(self.burst), fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
         
         # Calculate average of the burst
         Sxx = np.average(Sxx, axis=0)
