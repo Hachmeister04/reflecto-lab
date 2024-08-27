@@ -51,7 +51,7 @@ class PlotWindow(QMainWindow):
         ])
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
-            {'name': 'Side', 'type': 'list', 'limits': ['hfs', 'lfs']}
+            {'name': 'Side', 'type': 'list', 'limits': ['HFS', 'LFS']}
         ])
         self.params_sweep = Parameter.create(name='Sweep', type='group', children=[
             {'name': 'Sweep', 'type': 'slider', 'limits': (1, 1)},
