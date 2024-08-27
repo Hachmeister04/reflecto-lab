@@ -9,5 +9,5 @@ def get_shot_from_path(path: str):
     except ValueError:
         raise Exception("Wrong file name")
 
-def find_path_from_shot(shot: int):
+def get_path_from_shot(shot: int):
     return f"/shares/experiments/aug-rawfiles/RTR/{shot//10}/{shot}"

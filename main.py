@@ -7,7 +7,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
 from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation
-from func_aux import round_to_nearest, get_shot_from_path, find_path_from_shot
+from func_aux import round_to_nearest, get_shot_from_path, get_path_from_shot
 import time
 
 #TODO: Remove hardcoded values and add them here
@@ -97,9 +97,11 @@ class PlotWindow(QMainWindow):
         if sender == self.params_file.child('Open'):
             self.file_path = self.params_file.child('Open').value()
             self.shot = get_shot_from_path(self.file_path)
+            self.params_file.child('Shot').setValue(self.shot, blockSignal=self.update_display)
         elif sender == self.params_file.child('Shot'):
-            self.file_path = find_path_from_shot(self.params_file.child('Shot').value())
+            self.file_path = get_path_from_shot(self.params_file.child('Shot').value())
             self.shot = self.params_file.child('Shot').value()
+            self.params_file.child('Open').setValue(self.file_path, blockSignal=self.update_display)
         
         try:
             if self.params_added == False:
