@@ -7,14 +7,16 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
 from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation
-from func_aux import round_to_nearest, shot
+from func_aux import round_to_nearest, shot, find_path_from_shot
 import time
 
 #TODO: Remove hardcoded values and add them here
 MAX_BURST_SIZE = 285
 DEFAULT_NPERSEG = 256
-DEFAULT_NOVERLAP = 255
+DEFAULT_NOVERLAP = 220
 DEFAULT_NFFT = 512
+MIN_NPERSEG = 10
+MAX_NFFT = np.inf
 
 #TODO: Make all calls to pyqtgraph directly. Do not use Qt to draw windows
 class PlotWindow(QMainWindow):
@@ -41,9 +43,11 @@ class PlotWindow(QMainWindow):
         self.graph_layout = pg.GraphicsLayoutWidget()
         
         #TODO: Fix the displayed value in the parameters
+        #TODO: Add the parameters to a different file
         # Create the parameter tree
         self.params_file = Parameter.create(name='File', type='group', children=[
-            {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'}
+            {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'},
+            {'name': 'Shot', 'type': 'int'}
         ])
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
@@ -70,9 +74,6 @@ class PlotWindow(QMainWindow):
         # Create the second plot next to the first one
         self.plot_fft = self.graph_layout.addPlot(title="FFT")
         #self.plot_fft.setFixedWidth(600)
-        
-        # Connect the file to the function that displays the rest of the parameters and the graphs
-        self.params_file.child('Open').sigValueChanged.connect(self.update_display)
 
         # Add widgets and layouts---------------------------------------------------
         
@@ -82,17 +83,29 @@ class PlotWindow(QMainWindow):
         
         # Add the splitter to the main layout
         self.layout.addWidget(self.splitter)
+
+        #---------------------------------------------------------------------------
+
+        # Connect the file to the function that displays the rest of the parameters and the graphs
+        self.params_file.child('Open').sigValueChanged.connect(self.update_display)
+        self.params_file.child('Shot').sigValueChanged.connect(self.update_display)
     
     def update_display(self):
+        sender = self.sender()
 
         # Name the path to the directory
-        self.file_path = self.params_file.child('Open').value()
-        self.shot = shot(self.file_path)
+        if sender == self.params_file.child('Open'):
+            self.file_path = self.params_file.child('Open').value()
+            self.shot = shot(self.file_path)
+        elif sender == self.params_file.child('Shot'):
+            self.file_path = find_path_from_shot(self.params_file.child('Shot').value())
+            self.shot = self.params_file.child('Shot').value()
 
         try:
-            self.param_tree.removeTopLevelItem(self.params_detector)
+            self.param_tree.removeTopLevelItem('Detector')
             self.param_tree.removeTopLevelItem(self.params_sweep)
             self.param_tree.removeTopLevelItem(self.params_fft)
+            print("success")
         except Exception:
             pass
         
@@ -122,11 +135,13 @@ class PlotWindow(QMainWindow):
 
         self.update_plot()
 
+        # Set limits to the parameters----------------------------------------------
+
         self.params_sweep.child('Sweep').setLimits((1, len(get_timestamps(self.shot, self.file_path))))
         self.params_sweep.child('Sweep nº').setLimits((1, len(get_timestamps(self.shot, self.file_path))))
-        self.params_fft.child('nperseg').setLimits((10, len(self.data)))
+        self.params_fft.child('nperseg').setLimits((MIN_NPERSEG, len(self.data)))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
-        self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
+        self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), MAX_NFFT))
         
     def update_plot(self):
         self.band = self.params_detector.child('Band').value()
@@ -145,11 +160,13 @@ class PlotWindow(QMainWindow):
         self.plot_sweep.plot(x, y, pen=pg.mkPen(color='r', width=2))
         self.plot_sweep.setLabel('bottom', 'Time', units='s')
         print("plot")
+        #TODO: Don't call update_fft inside this function
         self.update_fft()
     
     def update_fft(self):
-        # Compute the spectrogram of the data
         start_time = time.time()
+
+        # Compute the spectrogram of the data
         burst_size = int(self.params_fft.child('burst size (odd)').value())
         burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - burst_size // 2, burst_size)
         
