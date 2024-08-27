@@ -8,4 +8,4 @@ def shot(path: str):
         raise Exception("Wrong file name")
 
 def find_path_from_shot(shot: int):
-    return f"/shares/experiments/rawfiles/RTR/{shot//10}/{shot}"
+    return f"/shares/experiments/aug-rawfiles/RTR/{shot//10}/{shot}"

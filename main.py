@@ -100,18 +100,17 @@ class PlotWindow(QMainWindow):
         elif sender == self.params_file.child('Shot'):
             self.file_path = find_path_from_shot(self.params_file.child('Shot').value())
             self.shot = self.params_file.child('Shot').value()
-
-        try:
-            self.param_tree.removeTopLevelItem('Detector')
-            self.param_tree.removeTopLevelItem(self.params_sweep)
-            self.param_tree.removeTopLevelItem(self.params_fft)
-            print("success")
-        except Exception:
-            pass
         
-        self.param_tree.addParameters(self.params_detector)
-        self.param_tree.addParameters(self.params_sweep)
-        self.param_tree.addParameters(self.params_fft)
+        try:
+            if self.params_added == False:
+                self.param_tree.addParameters(self.params_detector)
+                self.param_tree.addParameters(self.params_sweep)
+                self.param_tree.addParameters(self.params_fft)
+        except AttributeError:
+            self.param_tree.addParameters(self.params_detector)
+            self.param_tree.addParameters(self.params_sweep)
+            self.param_tree.addParameters(self.params_fft)
+            self.params_added = True
 
         # Connect the parameters to the functions-----------------------------------
 
