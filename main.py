@@ -22,6 +22,13 @@ class PlotWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        self.data = None
+        self.burst = None
+        self.nperseg = None
+        self.noverlap = None
+        self.nfft = None
+        self.colormap = None
+
         #---------------------------------------------------------------------------
 
         # Set the application icon
@@ -156,69 +163,84 @@ class PlotWindow(QMainWindow):
             self.signal = 'complex'
         else:
             self.signal = 'real'
-
         self.sweep = int(self.params_sweep.child('Sweep nº').value()) - 1
-        self.data = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep)[0]
-        x = np.arange(len(self.data)) / get_sampling_frequency(self.shot, self.file_path)
-        y = np.real(self.data)
-        # Plot the data
-        self.plot_sweep.clear()  # Clears the plot
-        self.plot_sweep.plot(x, y, pen=pg.mkPen(color='r', width=2))
-        self.plot_sweep.setLabel('bottom', 'Time', units='s')
-        print("plot")
+        new_data = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep)[0]
+        #TODO: Fix this if condition
+        if not(np.array_equal(self.data, new_data)):
+            self.data = new_data
+            x = np.arange(len(self.data)) / get_sampling_frequency(self.shot, self.file_path)
+            y = np.real(self.data)
+            # Plot the data
+            self.plot_sweep.clear()  # Clears the plot
+            self.plot_sweep.plot(x, y, pen=pg.mkPen(color='r', width=2))
+            self.plot_sweep.setLabel('bottom', 'Time', units='s')
+            print("plot")
     
     def update_fft(self):
         start_time = time.time()
 
         # Compute the spectrogram of the data
-        nperseg = int(self.params_fft.child('nperseg').value())
-        noverlap = int(self.params_fft.child('noverlap').value())
-        nfft = int(self.params_fft.child('nfft').value())
-        burst_size = int(self.params_fft.child('burst size (odd)').value())
-        colormap = self.params_fft.child('cmap').value()
+        new_nperseg = int(self.params_fft.child('nperseg').value())
+        new_noverlap = int(self.params_fft.child('noverlap').value())
+        new_nfft = int(self.params_fft.child('nfft').value())
+        new_burst_size = int(self.params_fft.child('burst size (odd)').value())
+        new_colormap = self.params_fft.child('cmap').value()
 
-        self.burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - burst_size // 2, burst_size)
-        fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
-        f, t, Sxx = spectrogram(np.real(self.burst), fs=fs, nperseg=nperseg, noverlap=noverlap, nfft=nfft)
-        
-        # Calculate average of the burst
-        Sxx = np.average(Sxx, axis=0)
+        new_burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - new_burst_size // 2, new_burst_size)
+        #TODO: Fix this if condition
+        if (not(np.array_equal(self.burst, new_burst)) or
+            new_nperseg != self.nperseg or
+            new_noverlap != self.noverlap or
+            new_nfft != self.nfft or
+            new_colormap != self.colormap):
 
-        # Example: Transformed display of ImageItem
-        alpha_x = (nperseg-noverlap)/fs
-        tr = QtGui.QTransform() # prepare ImageItem transformation
-        tr.translate(noverlap/2/fs, 0)
-        tr.scale(alpha_x, f[1]) # scale horizontal and vertical axes
+            self.burst = new_burst
+            self.nperseg = new_nperseg
+            self.noverlap = new_noverlap
+            self.nfft = new_nfft
+            self.colormap = new_colormap
 
-        i1 = pg.ImageItem(image=Sxx.T) # Note: `Sxx` needs to be transposed to fit the display format
-        i1.setTransform(tr) # assign transform
-        
-        self.plot_fft.clear()  # Clear previous plot
-        self.plot_fft.addItem(i1)
-        
-        # Set up color bar
-        try:
-            self.colorBar.setImageItem(i1)
-            self.colorBar.setColorMap(colormap)
-        except AttributeError:
-            self.colorBar = self.plot_fft.addColorBar(i1, colorMap=colormap, values=(0, np.max(Sxx)))
+            fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
+            f, t, Sxx = spectrogram(np.real(self.burst), fs=fs, nperseg=self.nperseg, noverlap=self.noverlap, nfft=self.nfft)
+            
+            # Calculate average of the burst
+            Sxx = np.average(Sxx, axis=0)
 
-        # Generate the line through the max of the graph
-        x = np.linspace(t[0], t[-1], len(t))  # X coordinates
-        y, _ = column_wise_max_with_quadratic_interpolation(Sxx)  # Y coordinates
-        y *= f[1]
-        self.plot_fft.plot(x, y, pen=pg.mkPen(color='r', width=1))
-        
-        # Configure plot appearance
-        self.plot_fft.setMouseEnabled(x=True, y=True)
-        self.plot_fft.disableAutoRange()
-        #self.plot_fft.hideButtons()
-        #self.plot_fft.setRange(xRange=(0, 25e-6), yRange=(0, 2.5e6), padding=0)
-        self.plot_fft.showAxes(True, showValues=(True, False, False, True))
-        self.plot_fft.setLabel('bottom', 'Time', units='s')
-        self.plot_fft.setLabel('left', 'Frequency', units='Hz')
-        print("fft")
-        print("--- %s seconds ---" % (time.time() - start_time))
+            # Example: Transformed display of ImageItem
+            alpha_x = (self.nperseg-self.noverlap)/fs
+            tr = QtGui.QTransform() # prepare ImageItem transformation
+            tr.translate(self.noverlap/2/fs, 0)
+            tr.scale(alpha_x, f[1]) # scale horizontal and vertical axes
+
+            i1 = pg.ImageItem(image=Sxx.T) # Note: `Sxx` needs to be transposed to fit the display format
+            i1.setTransform(tr) # assign transform
+            
+            self.plot_fft.clear()  # Clear previous plot
+            self.plot_fft.addItem(i1)
+            
+            # Set up color bar
+            try:
+                self.colorBar.setImageItem(i1)
+                self.colorBar.setColorMap(self.colormap)
+            except AttributeError:
+                self.colorBar = self.plot_fft.addColorBar(i1, colorMap=self.colormap, values=(0, np.max(Sxx)))
+
+            # Generate the line through the max of the graph
+            x = np.linspace(t[0], t[-1], len(t))  # X coordinates
+            y, _ = column_wise_max_with_quadratic_interpolation(Sxx)  # Y coordinates
+            y *= f[1]
+            self.plot_fft.plot(x, y, pen=pg.mkPen(color='r', width=1))
+            
+            # Configure plot appearance
+            self.plot_fft.setMouseEnabled(x=True, y=True)
+            self.plot_fft.disableAutoRange()
+            #self.plot_fft.hideButtons()
+            #self.plot_fft.setRange(xRange=(0, 25e-6), yRange=(0, 2.5e6), padding=0)
+            self.plot_fft.showAxes(True, showValues=(True, False, False, True))
+            self.plot_fft.setLabel('bottom', 'Time', units='s')
+            self.plot_fft.setLabel('left', 'Frequency', units='Hz')
+            print("fft")
+            print("--- %s seconds ---" % (time.time() - start_time))
 
     def update_plot_params(self):
         #TODO: Don't redraw the graphs if the values are the same
