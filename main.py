@@ -7,7 +7,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
 from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation
-from func_aux import round_to_nearest, shot, find_path_from_shot
+from func_aux import round_to_nearest, get_shot_from_path, find_path_from_shot
 import time
 
 #TODO: Remove hardcoded values and add them here
@@ -96,7 +96,7 @@ class PlotWindow(QMainWindow):
         # Name the path to the directory
         if sender == self.params_file.child('Open'):
             self.file_path = self.params_file.child('Open').value()
-            self.shot = shot(self.file_path)
+            self.shot = get_shot_from_path(self.file_path)
         elif sender == self.params_file.child('Shot'):
             self.file_path = find_path_from_shot(self.params_file.child('Shot').value())
             self.shot = self.params_file.child('Shot').value()

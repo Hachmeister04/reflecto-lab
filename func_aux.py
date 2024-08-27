@@ -1,9 +1,11 @@
+import os
+
 def round_to_nearest(value: float, value_list: list):
     return min(value_list, key=lambda x: abs(x - value))
 
-def shot(path: str):
+def get_shot_from_path(path: str):
     try:
-        return int(path.split('\\')[-1])
+        return int(os.path.basename(path))
     except ValueError:
         raise Exception("Wrong file name")
 
