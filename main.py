@@ -8,8 +8,7 @@ from PyQt6.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
-#TODO: Import just rpspy and change the calls to these functions
-from rpspy import get_band_signal, get_timestamps, get_sampling_frequency, column_wise_max_with_quadratic_interpolation, get_linearization, linearize, aug_tgcorr2, full_profile_reconstruction
+import rpspy
 from func_aux import round_to_nearest, get_shot_from_path, get_path_from_shot
 from functools import lru_cache
 import time
@@ -25,18 +24,21 @@ MIN_NPERSEG = 10
 MAX_NFFT = np.inf
 DEFAULT_FILTER_LOW = 0 #Hz
 DEFAULT_FILTER_HIGH = 10*1e6 #Hz
+DEFAULT_START_TIME = 0 #s
+DEFAULT_END_TIME = 10 #s
+DEFAULT_TIMESTEP = 1e-3 #s
 
 #TODO: Use this for other functions
 #Cached versions of functions
 @lru_cache(maxsize=50)
 def cached_get_linearization(*args, **kwargs):
-    return get_linearization(*args, **kwargs)
+    return rpspy.get_linearization(*args, **kwargs)
 
 @lru_cache(maxsize=100)
 def cached_full_profile_reconstruction(*args, **kwargs):
     kwargs['spectrogram_options'] = json.loads(kwargs['spectrogram_options'])
     kwargs['filters'] = json.loads(kwargs['filters'])
-    return full_profile_reconstruction(*args, **kwargs)
+    return rpspy.full_profile_reconstruction(*args, **kwargs)
 
 #TODO: Segment the code
 class PlotWindow(QMainWindow):
@@ -122,12 +124,12 @@ class PlotWindow(QMainWindow):
             {'name': 'Sweep nº', 'type': 'float', 'value': 1},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True},
         ])
-        self.params_fft = Parameter.create(name='FFT', type='group', children=[
+        self.params_fft = Parameter.create(name='Spectrogram', type='group', children=[
             {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG},
             {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP},
             {'name': 'nfft', 'type': 'float', 'value': DEFAULT_NFFT},
             {'name': 'burst size (odd)', 'type': 'float', 'value': 1, 'limits': (1, MAX_BURST_SIZE)},
-            {'name': 'cmap', 'type': 'cmaplut', 'value': 'plasma'}
+            {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'}
         ])
         self.params_filter = Parameter.create(name='Filters (above dispersion)', type='group', children=[
             {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True},
@@ -136,11 +138,10 @@ class PlotWindow(QMainWindow):
         self.params_profile = Parameter.create(name='Profile', type='group', children=[
             {'name': 'Calculate Profile', 'type': 'action'},
         ])
-        #TODO: Set limits to these parameters
         self.params_reconstruct = Parameter.create(name='Reconstruct Shot', type='group', children=[
-            {'name': 'Start Time', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True},
-            {'name': 'End Time', 'type': 'float', 'value': 10, 'suffix': 's', 'siPrefix': True},
-            {'name': 'Time Step', 'type': 'float', 'value': 1e-3, 'suffix': 's', 'siPrefix': True},
+            {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True},
+            {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True},
+            {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True},
             {'name': 'Reconstruct Shot', 'type': 'action'}
         ])
         self.param_tree = ParameterTree()
@@ -210,7 +211,7 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('burst size (odd)').sigValueChanged.connect(self.update_fft_params)
-        self.params_fft.child('cmap').sigValueChanged.connect(self.update_fft_params)
+        self.params_fft.child('Color Map').sigValueChanged.connect(self.update_fft_params)
 
         #Connect the filter params to update the fft
         self.params_filter.child('Low Filter').sigValueChanged.connect(self.update_fft_params)
@@ -218,6 +219,10 @@ class PlotWindow(QMainWindow):
 
         #Connect the button to update the profile
         self.params_profile.child('Calculate Profile').sigActivated.connect(self.update_profile)
+
+        #Connect the start and end times to eachother
+        self.params_reconstruct.child('Start Time').sigValueChanged.connect(self.update_reconstruct_params)
+        self.params_reconstruct.child('End Time').sigValueChanged.connect(self.update_reconstruct_params)
 
         #Connect the button to reconstruct shot
         self.params_reconstruct.child('Reconstruct Shot').sigActivated.connect(self.request_reconstruct)
@@ -229,13 +234,15 @@ class PlotWindow(QMainWindow):
 
         # Set limits to the parameters----------------------------------------------
 
-        self.params_sweep.child('Sweep').setLimits((1, len(get_timestamps(self.shot, self.file_path))))
-        self.params_sweep.child('Sweep nº').setLimits((1, len(get_timestamps(self.shot, self.file_path))))
+        self.params_sweep.child('Sweep').setLimits((1, len(rpspy.get_timestamps(self.shot, self.file_path))))
+        self.params_sweep.child('Sweep nº').setLimits((1, len(rpspy.get_timestamps(self.shot, self.file_path))))
         self.params_fft.child('nperseg').setLimits((MIN_NPERSEG, len(self.data)))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), MAX_NFFT))
         self.params_filter.child('Low Filter').setLimits((0, np.inf))
         self.params_filter.child('High Filter').setLimits((abs(self.f_beat[0] - self.f_beat[1]), np.inf))
+        self.params_reconstruct.child('Start Time').setLimits((0, len(rpspy.get_timestamps(self.shot, self.file_path)) * (rpspy.get_timestamps(self.shot, self.file_path)[1] - rpspy.get_timestamps(self.shot, self.file_path)[0])))
+        self.params_reconstruct.child('End Time').setLimits((0, len(rpspy.get_timestamps(self.shot, self.file_path)) * (rpspy.get_timestamps(self.shot, self.file_path)[1] - rpspy.get_timestamps(self.shot, self.file_path)[0])))
         
     def update_plot(self):
         self.band = self.params_detector.child('Band').value()
@@ -246,10 +253,10 @@ class PlotWindow(QMainWindow):
             self.signal = 'complex'
         else:
             self.signal = 'real'
-        new_data = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep)[0]
-        #x = np.arange(len(self.data)) / get_sampling_frequency(self.shot, self.file_path)
+        new_data = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep)[0]
+        #x = np.arange(len(self.data)) / rpspy.get_sampling_frequency(self.shot, self.file_path)
         x = cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
-        x, new_data = linearize(x, new_data)
+        x, new_data = rpspy.linearize(x, new_data)
         if not(np.array_equal(self.data, new_data)):
             self.data = new_data
             y_real = np.real(self.data)
@@ -276,13 +283,13 @@ class PlotWindow(QMainWindow):
         new_noverlap = int(self.params_fft.child('noverlap').value())
         new_nfft = int(self.params_fft.child('nfft').value())
         new_burst_size = int(self.params_fft.child('burst size (odd)').value())
-        new_colormap = self.params_fft.child('cmap').value()
+        new_colormap = self.params_fft.child('Color Map').value()
         new_filter_low = self.params_filter.child('Low Filter').value()
         new_filter_high = self.params_filter.child('High Filter').value()
 
-        new_burst = get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - new_burst_size // 2, new_burst_size)
+        new_burst = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - new_burst_size // 2, new_burst_size)
         x = cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
-        x, new_burst = linearize(x, new_burst)
+        x, new_burst = rpspy.linearize(x, new_burst)
         if (not(np.array_equal(self.burst, new_burst)) or
             new_nperseg != self.nperseg or
             new_noverlap != self.noverlap or
@@ -299,7 +306,7 @@ class PlotWindow(QMainWindow):
             self.filter_low = new_filter_low
             self.filter_high = new_filter_high
 
-            fs = get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
+            fs = rpspy.get_sampling_frequency(self.shot, self.file_path)  # Sampling frequency
 
             self.f_beat, t, Sxx = spectrogram(
                 self.burst, 
@@ -345,7 +352,7 @@ class PlotWindow(QMainWindow):
 
             #Generate dispersion line
             k = (f_probe[-1] - f_probe[0]) / (t[-1] - t[0])
-            y_dis = k * aug_tgcorr2(self.band, self.side, f_probe*1e-9, self.shot)
+            y_dis = k * rpspy.aug_tgcorr2(self.band, self.side, f_probe*1e-9, self.shot)
             self.plot_fft.plot(f_probe, y_dis, pen=pg.mkPen(color='g', width=2))
 
             #TODO: Don't redraw the fft when redrawing filters
@@ -363,7 +370,7 @@ class PlotWindow(QMainWindow):
             Sxx_copy[np.broadcast_to(self.f_beat[:, None], Sxx_copy.shape) >= y_dis + self.filter_high] = Sxx_copy.min()
             
             # Generate the line through the max of the graph
-            y_max, _ = column_wise_max_with_quadratic_interpolation(Sxx_copy)  # Y coordinates
+            y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx_copy)  # Y coordinates
             y_max *= abs(self.f_beat[1]-self.f_beat[0])
             if self.burst.dtype == complex:
                 y_max += -fs/2
@@ -423,21 +430,21 @@ class PlotWindow(QMainWindow):
 
         if sender == self.params_sweep.child('Sweep'):
             value = self.params_sweep.child('Sweep').value()
-            timestamp = get_timestamps(self.shot, self.file_path)[value - 1]
+            timestamp = rpspy.get_timestamps(self.shot, self.file_path)[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
 
         elif sender == self.params_sweep.child('Sweep nº'):
             value = int(self.params_sweep.child('Sweep nº').value())
-            timestamp = get_timestamps(self.shot, self.file_path)[value - 1]
+            timestamp = rpspy.get_timestamps(self.shot, self.file_path)[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             
         elif sender == self.params_sweep.child('Timestamp'):
             value = self.params_sweep.child('Timestamp').value()
-            timestamp = round_to_nearest(value, get_timestamps(self.shot, self.file_path))
-            index = np.where(get_timestamps(self.shot, self.file_path) == timestamp)
+            timestamp = round_to_nearest(value, rpspy.get_timestamps(self.shot, self.file_path))
+            index = np.where(rpspy.get_timestamps(self.shot, self.file_path) == timestamp)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
@@ -459,10 +466,10 @@ class PlotWindow(QMainWindow):
             else:
                 self.params_fft.child('burst size (odd)').setValue(value, blockSignal=self.update_fft_params)
             lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
-            upper_limit = int(len(get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
+            upper_limit = int(len(rpspy.get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
             self.params_sweep.child('Sweep').setLimits([lower_limit, upper_limit])
             self.params_sweep.child('Sweep nº').setLimits([lower_limit, upper_limit])
-            self.params_sweep.child('Timestamp').setLimits([get_timestamps(self.shot, self.file_path)[lower_limit - 1], get_timestamps(self.shot, self.file_path)[upper_limit - 1]])
+            self.params_sweep.child('Timestamp').setLimits([rpspy.get_timestamps(self.shot, self.file_path)[lower_limit - 1], rpspy.get_timestamps(self.shot, self.file_path)[upper_limit - 1]])
 
         elif sender == self.params_fft.child('nperseg'):
             value = int(self.params_fft.child('nperseg').value())
@@ -492,6 +499,17 @@ class PlotWindow(QMainWindow):
         
         self.update_fft()
     
+    def update_reconstruct_params(self):
+        sender = self.sender()
+
+        if sender == self.params_reconstruct.child('Start Time'):
+            if self.params_reconstruct.child('Start Time').value() > self.params_reconstruct.child('End Time').value():
+                self.params_reconstruct.child('End Time').setValue(self.params_reconstruct.child('Start Time').value(), blockSignal=self.update_reconstruct_params)
+
+        elif sender == self.params_reconstruct.child('End Time'):
+            if self.params_reconstruct.child('End Time').value() < self.params_reconstruct.child('Start Time').value():
+                self.params_reconstruct.child('Start Time').setValue(self.params_reconstruct.child('End Time').value(), blockSignal=self.update_reconstruct_params)
+
     @pyqtSlot()
     def request_reconstruct(self):
         self.request_signal.emit()
@@ -517,7 +535,7 @@ class Threaded(QObject):
 
     @pyqtSlot()
     def reconstruct(self):
-        full_profile_reconstruction(
+        rpspy.full_profile_reconstruction(
             shot=main_window.shot, 
             destination_dir = 'reconstruction_shots', 
             shotfile_dir=main_window.file_path, 
