@@ -416,7 +416,6 @@ class PlotWindow(QMainWindow):
         self.draw_profile()
 
     def draw_profile(self):
-        #TODO: Adjust the scale of the profile/Draw another one with the other side (commit and push the changes done)
         try:
             self.plot_profile.clear()
             if self.side == 'HFS':
@@ -424,7 +423,6 @@ class PlotWindow(QMainWindow):
             else:
                 x = self.r_lfs[0]
             self.plot_profile.plot(x, self.density*1e-19, pen=pg.mkPen(color='r', width=2))
-            #commit and push this
             self.plot_profile.setLimits(xMin=min(x), 
                                         xMax=max(x), 
                                         maxXRange=max(x)-min(x), 
