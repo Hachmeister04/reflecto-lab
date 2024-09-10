@@ -3,8 +3,8 @@ import numpy as np
 import json
 from scipy.signal import spectrogram
 from scipy.fft import fftshift
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QSplitter
-from PyQt6.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QSplitter
+from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
@@ -416,10 +416,21 @@ class PlotWindow(QMainWindow):
         self.draw_profile()
 
     def draw_profile(self):
-        #TODO: Adjust the scale of the profile/Draw another one with the other side
+        #TODO: Adjust the scale of the profile/Draw another one with the other side (commit and push the changes done)
         try:
             self.plot_profile.clear()
-            self.plot_profile.plot(self.r_hfs[0] if self.side == 'HFS' else self.r_lfs[0], self.density*1e-19, pen=pg.mkPen(color='r', width=2))
+            if self.side == 'HFS':
+                x = self.r_hfs[0]
+            else:
+                x = self.r_lfs[0]
+            self.plot_profile.plot(x, self.density*1e-19, pen=pg.mkPen(color='r', width=2))
+            #commit and push this
+            self.plot_profile.setLimits(xMin=min(x), 
+                                        xMax=max(x), 
+                                        maxXRange=max(x)-min(x), 
+                                        yMin=min(self.density*1e-19),
+                                        yMax=max(self.density*1e-19),
+                                        maxYRange=max(self.density*1e-19)-min(self.density*1e-19))
             self.plot_profile.setLabel('bottom', 'radius', units='m')
             self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
         except AttributeError:
