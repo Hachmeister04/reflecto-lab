@@ -9,8 +9,7 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.parametertree import Parameter, ParameterTree
 import rpspy
-from func_aux import round_to_nearest, get_shot_from_path, get_path_from_shot
-from functools import lru_cache
+import func_aux
 import time
 
 #TODO: Correct get_linearization (24 in parameters)
@@ -27,18 +26,6 @@ DEFAULT_FILTER_HIGH = 10*1e6 #Hz
 DEFAULT_START_TIME = 0 #s
 DEFAULT_END_TIME = 10 #s
 DEFAULT_TIMESTEP = 1e-3 #s
-
-#TODO: Use this for other functions
-#Cached versions of functions
-@lru_cache(maxsize=50)
-def cached_get_linearization(*args, **kwargs):
-    return rpspy.get_linearization(*args, **kwargs)
-
-@lru_cache(maxsize=100)
-def cached_full_profile_reconstruction(*args, **kwargs):
-    kwargs['spectrogram_options'] = json.loads(kwargs['spectrogram_options'])
-    kwargs['filters'] = json.loads(kwargs['filters'])
-    return rpspy.full_profile_reconstruction(*args, **kwargs)
 
 #TODO: Segment the code
 class PlotWindow(QMainWindow):
@@ -71,7 +58,6 @@ class PlotWindow(QMainWindow):
         self.params_added = False
         
         #Store the filters
-        [DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH]
         self.filters = {
             'HFS': {
                 'K': [DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH],
@@ -147,13 +133,13 @@ class PlotWindow(QMainWindow):
         self.param_tree = ParameterTree()
         self.param_tree.addParameters(self.params_file)
 
-        # Create the first plot
+        # Create the first and second plots
         self.plot_sweep = self.graph_layout.addPlot(title="Sweep")
         self.plot_profile = self.graph_layout.addPlot(title="Profile")
 
         self.graph_layout.nextRow()
 
-        # Create the second plot next to the first one
+        # Create the third plot below the others
         self.plot_fft = self.graph_layout.addPlot(title="Spectrogram", colspan=2)
 
         # Add widgets and layouts---------------------------------------------------
@@ -177,10 +163,10 @@ class PlotWindow(QMainWindow):
         # Name the path to the directory
         if sender == self.params_file.child('Open'):
             self.file_path = self.params_file.child('Open').value()
-            self.shot = get_shot_from_path(self.file_path)
+            self.shot = func_aux.get_shot_from_path(self.file_path)
             self.params_file.child('Shot').setValue(self.shot, blockSignal=self.update_shot)
         elif sender == self.params_file.child('Shot'):
-            self.file_path = get_path_from_shot(self.params_file.child('Shot').value())
+            self.file_path = func_aux.get_path_from_shot(self.params_file.child('Shot').value())
             self.shot = self.params_file.child('Shot').value()
             self.params_file.child('Open').setValue(self.file_path, blockSignal=self.update_shot)
         
@@ -254,8 +240,7 @@ class PlotWindow(QMainWindow):
         else:
             self.signal = 'real'
         new_data = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep)[0]
-        #x = np.arange(len(self.data)) / rpspy.get_sampling_frequency(self.shot, self.file_path)
-        x = cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
+        x = func_aux.cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
         x, new_data = rpspy.linearize(x, new_data)
         if not(np.array_equal(self.data, new_data)):
             self.data = new_data
@@ -288,7 +273,7 @@ class PlotWindow(QMainWindow):
         new_filter_high = self.params_filter.child('High Filter').value()
 
         new_burst = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal, self.sweep - new_burst_size // 2, new_burst_size)
-        x = cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
+        x = func_aux.cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
         x, new_burst = rpspy.linearize(x, new_burst)
         if (not(np.array_equal(self.burst, new_burst)) or
             new_nperseg != self.nperseg or
@@ -390,7 +375,7 @@ class PlotWindow(QMainWindow):
             print("--- %s seconds ---" % (time.time() - start_time))
 
     def update_profile(self):
-        _, self.density, self.r_hfs, self.r_lfs = cached_full_profile_reconstruction(
+        _, self.density, self.r_hfs, self.r_lfs = func_aux.cached_full_profile_reconstruction(
             shot=self.shot, 
             #destination_dir: str = '.', 
             shotfile_dir=self.file_path, 
@@ -452,7 +437,7 @@ class PlotWindow(QMainWindow):
             
         elif sender == self.params_sweep.child('Timestamp'):
             value = self.params_sweep.child('Timestamp').value()
-            timestamp = round_to_nearest(value, rpspy.get_timestamps(self.shot, self.file_path))
+            timestamp = func_aux.round_to_nearest(value, rpspy.get_timestamps(self.shot, self.file_path))
             index = np.where(rpspy.get_timestamps(self.shot, self.file_path) == timestamp)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
