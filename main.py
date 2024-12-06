@@ -214,9 +214,6 @@ class PlotWindow(QMainWindow):
             {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True},
             {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True}
         ])
-        self.params_profile = Parameter.create(name='Profile', type='group', children=[
-            {'name': 'Calculate Profile', 'type': 'action'},
-        ])
         self.params_reconstruct = Parameter.create(name='Reconstruct Shot', type='group', children=[
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True},
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True},
@@ -245,7 +242,7 @@ class PlotWindow(QMainWindow):
         self.splitter_graphs.addWidget(self.graph_layout2)
         self.splitter.addWidget(self.splitter_graphs)
 
-        self.splitter.setSizes([350, 1250])
+        self.splitter.setSizes([400, 1200])
         
         # Add the splitter to the main layout
         self.layout.addWidget(self.splitter)
@@ -276,7 +273,6 @@ class PlotWindow(QMainWindow):
             self.param_tree.addParameters(self.params_sweep)
             self.param_tree.addParameters(self.params_fft)
             self.param_tree.addParameters(self.params_filter)
-            self.param_tree.addParameters(self.params_profile)
             self.param_tree.addParameters(self.params_reconstruct)
             self.params_added = True
 
@@ -303,9 +299,6 @@ class PlotWindow(QMainWindow):
         #Connect the filter params to update the fft
         self.params_filter.child('Low Filter').sigValueChanged.connect(self.update_fft_params)
         self.params_filter.child('High Filter').sigValueChanged.connect(self.update_fft_params)
-
-        #Connect the button to update the profile
-        self.params_profile.child('Calculate Profile').sigActivated.connect(self.update_profile)
 
         #Connect the start and end times to eachother
         self.params_reconstruct.child('Start Time').sigValueChanged.connect(self.update_reconstruct_params)
