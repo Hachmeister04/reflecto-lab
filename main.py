@@ -12,7 +12,6 @@ import rpspy
 import func_aux
 import time
 
-#TODO: Correct get_linearization (24 in parameters)
 
 #TODO: Remove hardcoded values and add them here
 # Spectogram Params
@@ -41,7 +40,7 @@ DECIMALS_TIMESTAMP = 8
 DEFAULT_SECTION_SIZE = 200
 
 # Profile Properties
-PROFILE_INVERSION_RESOLUTION = 1000 #points
+PROFILE_INVERSION_RESOLUTION = 150 #points
 
 #TODO: Segment the code
 class PlotWindow(QMainWindow):
@@ -81,28 +80,24 @@ class PlotWindow(QMainWindow):
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': None
                 },
                 'Ka': {
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': None
                 },
                 'Q': {
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': None
                 },
                 'V': {
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': True
                 }
             },
@@ -111,28 +106,24 @@ class PlotWindow(QMainWindow):
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': None
                 },
                 'Ka': {
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': None
                 },
                 'Q': {
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': None
                 },
                 'V': {
                     'nperseg': DEFAULT_NPERSEG,
                     'noverlap': DEFAULT_NOVERLAP,
                     'nfft': DEFAULT_NFFT,
-                    'burst size': DEFAULT_BURST_SIZE,
                     'subtract': True
                 }
             }
@@ -294,7 +285,6 @@ class PlotWindow(QMainWindow):
         # Connect the lists to update the plot
         self.params_detector.child('Band').sigValueChanged.connect(self.update_detector_params)
         self.params_detector.child('Side').sigValueChanged.connect(self.update_detector_params)
-        self.params_detector.child('Side').sigValueChanged.connect(self.draw_profile)
 
         # Connect the slider, sweep, and timestamp to update the plot
         self.params_sweep.child('Sweep').sigValueChanged.connect(self.update_plot_params)
@@ -329,6 +319,7 @@ class PlotWindow(QMainWindow):
         self.update_plot()
         self.update_fft()
         self.update_all_beatf()
+        self.update_profile()
 
         # Set limits to the parameters----------------------------------------------
 
@@ -379,13 +370,11 @@ class PlotWindow(QMainWindow):
         
         self.plot_sweep.setLimits(xMin=self.x_data[0],
                                 xMax=self.x_data[-1],
-                                maxXRange=self.x_data[-1]-self.x_data[0],
                                 yMin=0,
-                                yMax=2**12,
-                                maxYRange=2**12)
+                                yMax=2**12)
         
-        self.plot_sweep.setRange(xRange=(self.x_data[0], self.x_data[-1]),
-                                    yRange=(0, 2**12))
+        """ self.plot_sweep.setRange(xRange=(self.x_data[0], self.x_data[-1]),
+                                    yRange=(0, 2**12)) """
         
         self.plot_sweep.setLabel('bottom', 'Probing Frequency', units='Hz')
 
@@ -444,15 +433,13 @@ class PlotWindow(QMainWindow):
 
         # Configure plot appearance
         self.plot_fft.setMouseEnabled(x=True, y=True)
-        self.plot_fft.setLimits(xMin=self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2, 
-                                xMax=self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2, 
-                                maxXRange=self.f_probe[-1]-self.f_probe[0]+self.f_probe[1]-self.f_probe[0], 
+        self.plot_fft.setLimits(xMin=self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2,
+                                xMax=self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2,
                                 yMin=self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2,
-                                yMax=self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2,
-                                maxYRange=self.f_beat[-1]-self.f_beat[0]+self.f_beat[1]-self.f_beat[0])
+                                yMax=self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2)
         
-        self.plot_fft.setRange(xRange=(self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2, self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2),
-                               yRange=(self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2, self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2))
+        """ self.plot_fft.setRange(xRange=(self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2, self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2),
+                               yRange=(self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2, self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2)) """
         
         self.plot_fft.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_fft.setLabel('left', 'Beat Frequency', units='Hz')
@@ -509,7 +496,7 @@ class PlotWindow(QMainWindow):
                     nperseg = self.spect_params[side][band]['nperseg']
                     noverlap = self.spect_params[side][band]['noverlap']
                     nfft = self.spect_params[side][band]['nfft']
-                    burst_size = self.spect_params[side][band]['burst size']
+                    burst_size = int(self.params_fft.child('burst size (odd)').value())
                     subtract = self.spect_params[side][band]['subtract']
 
                     _, fs, f_beat, t, f_probe, Sxx = self.calculate_spectrogram(band, side, nperseg, noverlap, nfft, burst_size, subtract)
@@ -551,13 +538,11 @@ class PlotWindow(QMainWindow):
         print("beatf's")
         print("--- %s seconds ---" % (time.time() - start_time))
 
-    rpspy.profile_inversion()
 
     def draw_beatf(self):
-        #TODO: Color code the lines
         self.plot_beatf.clear()
 
-        all_delay_HFS_f_probe = np.concatenate((
+        self.all_delay_HFS_f_probe = np.concatenate((
             [0],
             self.beat_frequencies['HFS']['K'][0],
             self.beat_frequencies['HFS']['Ka'][0],
@@ -567,7 +552,7 @@ class PlotWindow(QMainWindow):
         )
 
 
-        all_delay_HFS_beat_time = np.concatenate((
+        self.all_delay_HFS_beat_time = np.concatenate((
             [0],
             self.beat_frequencies['HFS']['K'][2],
             self.beat_frequencies['HFS']['Ka'][2],
@@ -576,7 +561,7 @@ class PlotWindow(QMainWindow):
         )
         )
 
-        all_delay_LFS_f_probe = np.concatenate((
+        self.all_delay_LFS_f_probe = np.concatenate((
             [0],
             self.beat_frequencies['LFS']['K'][0],
             self.beat_frequencies['LFS']['Ka'][0],
@@ -585,7 +570,7 @@ class PlotWindow(QMainWindow):
         )
         )
 
-        all_delay_LFS_beat_time = np.concatenate(
+        self.all_delay_LFS_beat_time = np.concatenate(
             (
             [0],
             self.beat_frequencies['LFS']['K'][2],
@@ -595,8 +580,8 @@ class PlotWindow(QMainWindow):
         )
         )
         
-        self.plot_beatf.plot(all_delay_HFS_f_probe, all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
-        self.plot_beatf.plot(all_delay_LFS_f_probe, all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
+        self.plot_beatf.plot(self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
+        self.plot_beatf.plot(self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
 
         for side in self.beat_frequencies:
             for band in self.beat_frequencies[side]:
@@ -609,50 +594,32 @@ class PlotWindow(QMainWindow):
 
 
     def update_profile(self):
-        _, self.density, self.r_hfs, self.r_lfs = func_aux.cached_full_profile_reconstruction(
-            shot=self.shot, 
-            #destination_dir: str = '.', 
-            shotfile_dir=self.file_path, 
-            linearization_shotfile_dir=self.file_path, 
-            sweep_linearization=None, 
-            shot_linearization=self.shot,
-            spectrogram_options=json.dumps({
-            'K': {'nperseg': self.nperseg, 'noverlap':self.noverlap, 'nfft': self.nfft},
-            'Ka': {'nperseg': self.nperseg, 'noverlap':self.noverlap, 'nfft': self.nfft},
-            'Q': {'nperseg': self.nperseg, 'noverlap':self.noverlap, 'nfft': self.nfft},
-            'V': {'nperseg': self.nperseg, 'noverlap':self.noverlap, 'nfft': self.nfft},
-            }), 
-            filters=json.dumps(self.filters),
-            subtract_on_bands=None,
-            start_time = self.params_sweep.child('Timestamp').value(), 
-            end_time = self.params_sweep.child('Timestamp').value(), 
-            #time_step = 1e-3,
-            burst = int(self.params_fft.child('burst size (odd)').value()), 
-            write_dump = False, 
-            return_profiles = True,
-            )
-        
-        self.draw_profile()
+        group_delay_HFS_x = np.linspace(self.all_delay_HFS_f_probe[0], self.all_delay_HFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
+        group_delay_HFS_y = np.interp(group_delay_HFS_x, self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time)
 
+        group_delay_LFS_x = np.linspace(self.all_delay_LFS_f_probe[0], self.all_delay_LFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
+        group_delay_LFS_y = np.interp(group_delay_LFS_x, self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time)
 
-    def draw_profile(self):
-        try:
-            self.plot_profile.clear()
-            if self.side == 'HFS':
-                x = self.r_hfs[0]
-            else:
-                x = self.r_lfs[0]
-            self.plot_profile.plot(x, self.density*1e-19, pen=pg.mkPen(color='r', width=2))
-            self.plot_profile.setLimits(xMin=min(x), 
-                                        xMax=max(x), 
-                                        maxXRange=max(x)-min(x), 
-                                        yMin=min(self.density*1e-19),
-                                        yMax=max(self.density*1e-19),
-                                        maxYRange=max(self.density*1e-19)-min(self.density*1e-19))
-            self.plot_profile.setLabel('bottom', 'radius', units='m')
-            self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
-        except AttributeError:
-            pass
+        start_time = time.time()
+        r_HFS = rpspy.profile_inversion(group_delay_HFS_x, group_delay_HFS_y, pwld_batch=True)
+        r_LFS = rpspy.profile_inversion(group_delay_LFS_x, group_delay_LFS_y, pwld_batch=True)
+        print("profile")
+        print("--- %s seconds ---" % (time.time() - start_time))
+
+        ne_HFS = rpspy.f_to_ne(group_delay_HFS_x)
+        ne_LFS = rpspy.f_to_ne(group_delay_LFS_x)
+
+        self.plot_profile.clear()
+        self.plot_profile.plot(r_HFS, ne_HFS*1e-19, pen=pg.mkPen(color='r', width=2))
+        self.plot_profile.plot(r_LFS, ne_LFS*1e-19, pen=pg.mkPen(color='r', width=2))
+        # self.plot_profile.setLimits(xMin=min(x), 
+        #                             xMax=max(x), 
+        #                             maxXRange=max(x)-min(x), 
+        #                             yMin=min(self.density*1e-19),
+        #                             yMax=max(self.density*1e-19),
+        #                             maxYRange=max(self.density*1e-19)-min(self.density*1e-19))
+        self.plot_profile.setLabel('bottom', 'radius', units='m')
+        self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
     
 # Calculate----------------------------------------------------------------------------------------------------------------------
     
@@ -739,7 +706,6 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('nfft').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nfft'], blockSignal=self.update_fft_params)
-        self.params_fft.child('burst size (odd)').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['burst size'], blockSignal=self.update_fft_params)
         self.params_fft.child('Subtract dispersion').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract'], blockSignal=self.update_fft_params)
 
         if sender == self.params_detector.child('Band'):
@@ -781,6 +747,9 @@ class PlotWindow(QMainWindow):
         if not self.supress_updates:
             self.update_fft()
             self.update_all_beatf()
+            self.update_profile()
+        else:
+            self.update_all_beatf()
 
 
     def update_fft_params(self):
@@ -809,10 +778,8 @@ class PlotWindow(QMainWindow):
             value = int(self.params_fft.child('burst size (odd)').value())
             if value % 2 == 0:
                 self.params_fft.child('burst size (odd)').setValue(value - 1, blockSignal=self.update_fft_params)
-                self.spect_params[self.side][self.band]['burst size'] = value - 1
             else:
                 self.params_fft.child('burst size (odd)').setValue(value, blockSignal=self.update_fft_params)
-                self.spect_params[self.side][self.band]['burst size'] = value
 
             lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
             upper_limit = int(len(rpspy.get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
@@ -842,6 +809,7 @@ class PlotWindow(QMainWindow):
         if not self.supress_updates:
             self.update_fft()
             self.update_one_beatf()
+            self.update_profile()
     
 
     def update_reconstruct_params(self):
