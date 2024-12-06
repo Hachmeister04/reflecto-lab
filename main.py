@@ -40,6 +40,9 @@ DECIMALS_TIMESTAMP = 8
 # Param Tree
 DEFAULT_SECTION_SIZE = 200
 
+# Profile Properties
+PROFILE_INVERSION_RESOLUTION = 1000 #points
+
 #TODO: Segment the code
 class PlotWindow(QMainWindow):
     request_signal = pyqtSignal()
@@ -138,16 +141,16 @@ class PlotWindow(QMainWindow):
         #Store the beat frquencies of the 8 detectors
         self.beat_frequencies = {
             'HFS': {
-                'K': [], # [[f_probe], [beatf]]
-                'Ka': [],
-                'Q': [],
-                'V': []
+                'K': [None, None, None, None], # [[f_probe], [beatf], [beat_time], [df/dt]]
+                'Ka': [None, None, None, None],
+                'Q': [None, None, None, None],
+                'V': [None, None, None, None]
             },
             'LFS': {
-                'K': [],
-                'Ka': [],
-                'Q': [],
-                'V': []
+                'K': [None, None, None, None],
+                'Ka': [None, None, None, None],
+                'Q': [None, None, None, None],
+                'V': [None, None, None, None]
                 }
             }
 
@@ -405,6 +408,7 @@ class PlotWindow(QMainWindow):
 
 
     def draw_spectrogram(self):
+        #TODO: Fix scale of graphs when changing sweeps
         if self.params_fft.child('Scale').value() == 'Normalized':
             Sxx_copy = np.array(self.Sxx)
             max_vals = np.max(Sxx_copy, axis=0)
@@ -491,7 +495,15 @@ class PlotWindow(QMainWindow):
         for side in self.spect_params:
             for band in self.spect_params[side]:
                 if side == self.side and band == self.band:
-                    self.beat_frequencies[side][band] = [self.f_probe, self.y_beatf]
+                    
+                    if self.beat_frequencies[side][band][3] == None:
+                        df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
+                    else:
+                        df_dt = self.beat_frequencies[side][band][3]
+                    
+                    y_beat_time = (self.y_beatf - self.y_dis) / df_dt
+
+                    self.beat_frequencies[side][band] = [self.f_probe, self.y_beatf, y_beat_time, df_dt]
                 
                 else:
                     nperseg = self.spect_params[side][band]['nperseg']
@@ -506,7 +518,15 @@ class PlotWindow(QMainWindow):
 
                     y_beatf = self.calculate_beatf(band, side, Sxx, y_dis, f_beat, fs)
 
-                    self.beat_frequencies[side][band] = [f_probe, y_beatf]
+                    if self.beat_frequencies[side][band][3] == None:
+                        df_dt = (f_probe[-1] - f_probe[0])/((len(f_probe) - 1)*(1/fs))
+                    else:
+                        df_dt = self.beat_frequencies[side][band][3]
+                    
+                    y_beat_time = (y_beatf - y_dis) / df_dt
+
+                    self.beat_frequencies[side][band] = [f_probe, y_beatf, y_beat_time, df_dt]
+                    
         
         self.draw_beatf()
 
@@ -517,25 +537,75 @@ class PlotWindow(QMainWindow):
     def update_one_beatf(self):
         start_time = time.time()
 
-        self.beat_frequencies[self.side][self.band] = [self.f_probe, self.y_beatf]
+        if self.beat_frequencies[self.side][self.band][3] == None:
+            df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
+        else:
+            df_dt = self.beat_frequencies[self.side][self.band][3]
+        
+        y_beat_time = (self.y_beatf - self.y_dis) / df_dt
+
+        self.beat_frequencies[self.side][self.band] = [self.f_probe, self.y_beatf, y_beat_time, df_dt]
 
         self.draw_beatf()
         
         print("beatf's")
         print("--- %s seconds ---" % (time.time() - start_time))
 
+    rpspy.profile_inversion()
 
     def draw_beatf(self):
+        #TODO: Color code the lines
         self.plot_beatf.clear()
+
+        all_delay_HFS_f_probe = np.concatenate((
+            [0],
+            self.beat_frequencies['HFS']['K'][0],
+            self.beat_frequencies['HFS']['Ka'][0],
+            self.beat_frequencies['HFS']['Q'][0],
+            self.beat_frequencies['HFS']['V'][0]
+        )
+        )
+
+
+        all_delay_HFS_beat_time = np.concatenate((
+            [0],
+            self.beat_frequencies['HFS']['K'][2],
+            self.beat_frequencies['HFS']['Ka'][2],
+            self.beat_frequencies['HFS']['Q'][2],
+            self.beat_frequencies['HFS']['V'][2]
+        )
+        )
+
+        all_delay_LFS_f_probe = np.concatenate((
+            [0],
+            self.beat_frequencies['LFS']['K'][0],
+            self.beat_frequencies['LFS']['Ka'][0],
+            self.beat_frequencies['LFS']['Q'][0],
+            self.beat_frequencies['LFS']['V'][0]
+        )
+        )
+
+        all_delay_LFS_beat_time = np.concatenate(
+            (
+            [0],
+            self.beat_frequencies['LFS']['K'][2],
+            self.beat_frequencies['LFS']['Ka'][2],
+            self.beat_frequencies['LFS']['Q'][2],
+            self.beat_frequencies['LFS']['V'][2]
+        )
+        )
+        
+        self.plot_beatf.plot(all_delay_HFS_f_probe, all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
+        self.plot_beatf.plot(all_delay_LFS_f_probe, all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
 
         for side in self.beat_frequencies:
             for band in self.beat_frequencies[side]:
                 f_probe = self.beat_frequencies[side][band][0]
-                beatf = self.beat_frequencies[side][band][1]
-                self.plot_beatf.plot(f_probe, beatf, pen=pg.mkPen(color='r', width=2))
+                beat_time = self.beat_frequencies[side][band][2]
+                self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color='r' if side == 'HFS' else 'b', width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
-        self.plot_beatf.setLabel('left', 'Beat Frequency', units='Hz')
+        self.plot_beatf.setLabel('left', 'Time Delay', units='s')
 
 
     def update_profile(self):
