@@ -1,19 +1,29 @@
 import sys
 import numpy as np
-import json
 from scipy.signal import spectrogram
 from scipy.fft import fftshift
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QHBoxLayout, QSplitter, QHeaderView
+from PyQt5.QtWidgets import QApplication, QMainWindow, QHeaderView
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
+from pyqtgraph.dockarea import Dock, DockArea
 from pyqtgraph.parametertree import Parameter, ParameterTree
+from joblib import Parallel, delayed
 import rpspy
 import func_aux
 import time
 
-
+#TODO: Set limits of range view for the other graphs
 #TODO: Remove hardcoded values and add them here
+
+# Window
+WINDOW_SIZE = (1600, 800)
+PARAMETER_TREE_WIDTH_PROPORTION = 0.3
+GRAPH_WIDTH_PROPORTION = 0.35
+
+# Parameter Tree
+DEFAULT_SECTION_SIZE = 200
+
 # Spectogram Params
 MAX_BURST_SIZE = 285
 DEFAULT_NPERSEG = 256
@@ -35,9 +45,6 @@ DEFAULT_TIMESTEP = 1e-3 #s
 # Plot Params
 DECIMALS_SWEEP_NUM = 6
 DECIMALS_TIMESTAMP = 8
-
-# Param Tree
-DEFAULT_SECTION_SIZE = 200
 
 # Profile Properties
 PROFILE_INVERSION_RESOLUTION = 150 #points
@@ -132,16 +139,16 @@ class PlotWindow(QMainWindow):
         #Store the beat frquencies of the 8 detectors
         self.beat_frequencies = {
             'HFS': {
-                'K': [None, None, None, None], # [[f_probe], [beatf], [beat_time], [df/dt]]
-                'Ka': [None, None, None, None],
-                'Q': [None, None, None, None],
-                'V': [None, None, None, None]
+                'K': [None, None, None], # [[f_probe], [beatf], [beat_time]]
+                'Ka': [None, None, None],
+                'Q': [None, None, None],
+                'V': [None, None, None]
             },
             'LFS': {
-                'K': [None, None, None, None],
-                'Ka': [None, None, None, None],
-                'Q': [None, None, None, None],
-                'V': [None, None, None, None]
+                'K': [None, None, None],
+                'Ka': [None, None, None],
+                'Q': [None, None, None],
+                'V': [None, None, None]
                 }
             }
 
@@ -168,37 +175,51 @@ class PlotWindow(QMainWindow):
 
         # Set up the main window
         self.setWindowTitle('ReflectoLab')
-        self.setGeometry(100, 100, 1600, 800)
+        self.setGeometry(100, 100, WINDOW_SIZE[0], WINDOW_SIZE[1])
         
-        # Create layouts and widgets------------------------------------------------
+        # Create docks -------------------------------------------------------------
 
-        # Create a central widget and layout
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.layout = QHBoxLayout(self.central_widget)
-        
-        # Create a QSplitter for adjustable layout
-        self.splitter = QSplitter()
-        
-        # Create a second QSplitter for adjustable graphs
-        self.splitter_graphs = QSplitter()
+        self.area = DockArea()
 
-        # Create the main graphics layout widget
-        self.graph_layout1 = pg.GraphicsLayoutWidget()
-        self.graph_layout2 = pg.GraphicsLayoutWidget()
+        # Create docks
+        self.dock_tree = Dock("Settings", size=(WINDOW_SIZE[0]*PARAMETER_TREE_WIDTH_PROPORTION, WINDOW_SIZE[1]))
+        self.dock_sweep = Dock(" ", size=(WINDOW_SIZE[0]*GRAPH_WIDTH_PROPORTION, WINDOW_SIZE[1]/2))
+        self.dock_spect = Dock(" ", size=(WINDOW_SIZE[0]*GRAPH_WIDTH_PROPORTION, WINDOW_SIZE[1]/2))
+        self.dock_beatf = Dock(" ", size=(WINDOW_SIZE[0]*GRAPH_WIDTH_PROPORTION, WINDOW_SIZE[1]/2))
+        self.dock_profile = Dock(" ", size=(WINDOW_SIZE[0]*GRAPH_WIDTH_PROPORTION, WINDOW_SIZE[1]/2))
+
+        # Add docks to the area
+        self.area.addDock(self.dock_tree, 'left')
+        self.area.addDock(self.dock_sweep, 'right', self.dock_tree)
+        self.area.addDock(self.dock_spect, 'bottom', self.dock_sweep)
+        self.area.addDock(self.dock_profile, 'right')
+        self.area.addDock(self.dock_beatf, 'bottom', self.dock_profile)
+
+        # Set a central widget
+        self.setCentralWidget(self.area)
         
+        # Create widgets -----------------------------------------------------------
+
         # Create the parameter tree
+        self.param_tree = ParameterTree()
+        self.dock_tree.addWidget(self.param_tree)
+
+        # Set adjustable scale for names and values of the parameter tree
+        self.param_tree.header().setDefaultSectionSize(DEFAULT_SECTION_SIZE)
+        self.param_tree.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
+        # Create parameters
         self.params_file = Parameter.create(name='File', type='group', children=[
             {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'},
-            {'name': 'Shot', 'type': 'int'}
+            {'name': 'Shot', 'type': 'int'},
         ])
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
             {'name': 'Side', 'type': 'list', 'limits': ['HFS', 'LFS']}
         ])
         self.params_sweep = Parameter.create(name='Sweep', type='group', children=[
-            {'name': 'Sweep', 'type': 'slider', 'limits': (1, 1)},
             {'name': 'Sweep nº', 'type': 'float', 'value': 1, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
+            {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
         self.params_fft = Parameter.create(name='Spectrogram', type='group', children=[
@@ -220,32 +241,22 @@ class PlotWindow(QMainWindow):
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True},
             {'name': 'Reconstruct Shot', 'type': 'action'}
         ])
-        self.param_tree = ParameterTree()
-        self.param_tree.header().setDefaultSectionSize(DEFAULT_SECTION_SIZE)
-        self.param_tree.header().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+
         self.param_tree.addParameters(self.params_file)
 
-        # Create the first and second plots
-        self.plot_sweep = self.graph_layout1.addPlot(title="Sweep")
-        self.graph_layout1.nextRow()
-        self.plot_fft = self.graph_layout1.addPlot(title="Spectrogram")
+        # Create all the plots and add to docks ------------------------------------
 
-        self.plot_profile = self.graph_layout2.addPlot(title="Profile")
-        self.graph_layout2.nextRow()
-        self.plot_beatf = self.graph_layout2.addPlot(title="Beat Frequency")
+        self.plot_sweep = pg.PlotWidget(title="Sweep")
+        self.dock_sweep.addWidget(self.plot_sweep)
 
-        # Add widgets and layouts---------------------------------------------------
+        self.plot_spect = pg.PlotWidget(title="Spectrogram")
+        self.dock_spect.addWidget(self.plot_spect)
 
-        # Add widgets to the splitter
-        self.splitter.addWidget(self.param_tree)
-        self.splitter_graphs.addWidget(self.graph_layout1)
-        self.splitter_graphs.addWidget(self.graph_layout2)
-        self.splitter.addWidget(self.splitter_graphs)
+        self.plot_beatf = pg.PlotWidget(title="Beat Frequencies")
+        self.dock_beatf.addWidget(self.plot_beatf)
 
-        self.splitter.setSizes([400, 1200])
-        
-        # Add the splitter to the main layout
-        self.layout.addWidget(self.splitter)
+        self.plot_profile = pg.PlotWidget(title="Profile")
+        self.dock_profile.addWidget(self.plot_profile)
 
         #---------------------------------------------------------------------------
 
@@ -412,8 +423,8 @@ class PlotWindow(QMainWindow):
         i1 = pg.ImageItem(image=Sxx_copy.T) # Note: `Sxx` needs to be transposed to fit the display format
         i1.setTransform(transform) # assign transform
         
-        self.plot_fft.clear() # Clear previous plot
-        self.plot_fft.addItem(i1)
+        self.plot_spect.clear() # Clear previous plot
+        self.plot_spect.addItem(i1)
         
         # Set up color bar
         colormap = self.params_fft.child('Color Map').value()
@@ -422,20 +433,20 @@ class PlotWindow(QMainWindow):
             self.colorBar.setColorMap(colormap)
             self.colorBar.setLevels(values=(np.min(Sxx_copy), np.max(Sxx_copy)))
         except AttributeError:
-            self.colorBar = self.plot_fft.addColorBar(i1, colorMap=colormap, values=(np.min(Sxx_copy), np.max(Sxx_copy)))
+            self.colorBar = self.plot_spect.addColorBar(i1, colorMap=colormap, values=(np.min(Sxx_copy), np.max(Sxx_copy)))
 
         # Configure plot appearance
-        self.plot_fft.setMouseEnabled(x=True, y=True)
-        self.plot_fft.setLimits(xMin=self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2,
+        self.plot_spect.setMouseEnabled(x=True, y=True)
+        self.plot_spect.setLimits(xMin=self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2,
                                 xMax=self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2,
                                 yMin=self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2,
                                 yMax=self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2)
         
-        """ self.plot_fft.setRange(xRange=(self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2, self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2),
+        """ self.plot_spect.setRange(xRange=(self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2, self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2),
                                yRange=(self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2, self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2)) """
         
-        self.plot_fft.setLabel('bottom', 'Probing Frequency', units='Hz')
-        self.plot_fft.setLabel('left', 'Beat Frequency', units='Hz')
+        self.plot_spect.setLabel('bottom', 'Probing Frequency', units='Hz')
+        self.plot_spect.setLabel('left', 'Beat Frequency', units='Hz')
 
         self.draw_dispersion_line()
 
@@ -448,25 +459,25 @@ class PlotWindow(QMainWindow):
         
     def draw_dispersion_line(self):
         self.y_dis = self.calculate_dispersion(self.band, self.side, self.f_probe, self.t, self.subtract)
-        self.plot_fft.plot(self.f_probe, self.y_dis, pen=pg.mkPen(color='g', width=2))
+        self.plot_spect.plot(self.f_probe, self.y_dis, pen=pg.mkPen(color='g', width=2))
 
 
     def draw_low_filter(self):
         filter_low = self.filters[self.side][self.band][0]
         y_low = self.y_dis + filter_low
-        self.plot_fft.plot(self.f_probe, y_low, pen=pg.mkPen(color='b', width=2))
+        self.plot_spect.plot(self.f_probe, y_low, pen=pg.mkPen(color='b', width=2))
 
 
     def draw_high_filter(self):
         filter_high = self.filters[self.side][self.band][1]
         y_high = self.y_dis + filter_high
-        self.plot_fft.plot(self.f_probe, y_high, pen=pg.mkPen(color='w', width=2))
+        self.plot_spect.plot(self.f_probe, y_high, pen=pg.mkPen(color='w', width=2))
 
 
     def draw_beatf_spectrogram(self):
         Sxx_copy = np.array(self.Sxx)
         self.y_beatf = self.calculate_beatf(self.band, self.side, Sxx_copy, self.y_dis, self.f_beat, self.fs)
-        self.plot_fft.plot(self.f_probe, self.y_beatf, pen=pg.mkPen(color='r', width=2))
+        self.plot_spect.plot(self.f_probe, self.y_beatf, pen=pg.mkPen(color='r', width=2))
 
 
     def update_all_beatf(self):
@@ -476,10 +487,7 @@ class PlotWindow(QMainWindow):
             for band in self.spect_params[side]:
                 if side == self.side and band == self.band:
                     
-                    if self.beat_frequencies[side][band][3] == None:
-                        df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
-                    else:
-                        df_dt = self.beat_frequencies[side][band][3]
+                    df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
                     
                     y_beat_time = (self.y_beatf - self.y_dis) / df_dt
 
@@ -498,10 +506,7 @@ class PlotWindow(QMainWindow):
 
                     y_beatf = self.calculate_beatf(band, side, Sxx, y_dis, f_beat, fs)
 
-                    if self.beat_frequencies[side][band][3] == None:
-                        df_dt = (f_probe[-1] - f_probe[0])/((len(f_probe) - 1)*(1/fs))
-                    else:
-                        df_dt = self.beat_frequencies[side][band][3]
+                    df_dt = (f_probe[-1] - f_probe[0])/((len(f_probe) - 1)*(1/fs))
                     
                     y_beat_time = (y_beatf - y_dis) / df_dt
 
@@ -517,10 +522,7 @@ class PlotWindow(QMainWindow):
     def update_one_beatf(self):
         start_time = time.time()
 
-        if self.beat_frequencies[self.side][self.band][3] == None:
-            df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
-        else:
-            df_dt = self.beat_frequencies[self.side][self.band][3]
+        df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
         
         y_beat_time = (self.y_beatf - self.y_dis) / df_dt
 
