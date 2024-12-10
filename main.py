@@ -137,6 +137,9 @@ class PlotWindow(QMainWindow):
             }
         }
 
+        # Store the burst size (global)
+        self.burst_size = DEFAULT_BURST_SIZE
+
         #Store the beat frquencies of the 8 detectors
         self.beat_frequencies = {
             'HFS': {
@@ -512,7 +515,7 @@ class PlotWindow(QMainWindow):
                     nperseg = self.spect_params[side][band]['nperseg']
                     noverlap = self.spect_params[side][band]['noverlap']
                     nfft = self.spect_params[side][band]['nfft']
-                    burst_size = int(self.params_fft.child('burst size (odd)').value())
+                    burst_size = self.burst_size
                     subtract = self.spect_params[side][band]['subtract']
 
                     _, fs, f_beat, t, f_probe, Sxx = self.calculate_spectrogram(band, side, nperseg, noverlap, nfft, burst_size, subtract)
@@ -706,7 +709,8 @@ class PlotWindow(QMainWindow):
         path = self.params_config.child('Save').value()
 
         data = {'parameters': self.spect_params,
-                'filters': self.filters}
+                'filters': self.filters,
+                'burst_size': self.burst_size}
         
         with open(path, 'w') as file:
             json.dump(data, file, indent=4)
@@ -728,6 +732,7 @@ class PlotWindow(QMainWindow):
             # Extract data from the parsed JSON
             self.spect_params = data.get("parameters", {})
             self.filters = data.get("filters", {})
+            self.burst_size = data.get("burst_size", 0.0)
 
         self.update_config_params()
 
@@ -736,7 +741,7 @@ class PlotWindow(QMainWindow):
         self.params_config.child('Save').setValue('', blockSignal=self.save_config)
 
 
-    def update_config_params(self):
+    def set_saved_params(self):
         self.params_filter.child('Low Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][0], blockSignal=self.update_fft_params)
         self.params_filter.child('High Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][1], blockSignal=self.update_fft_params)
         self.params_fft.child('nperseg').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg'], blockSignal=self.update_fft_params)
@@ -750,27 +755,19 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('nfft').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nfft'], blockSignal=self.update_fft_params)
         self.params_fft.child('Subtract dispersion').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract'], blockSignal=self.update_fft_params)
 
-        self.update_plot()
-        self.update_fft()
-        self.update_all_beatf()
-        self.update_profile()
+
+    def update_config_params(self):
+        self.set_saved_params()
+
+        # Force change signal to handle sweep number and plot everything
+        self.params_fft.child('burst size (odd)').setValue(0, blockSignal=self.update_fft_params)
+        self.params_fft.child('burst size (odd)').setValue(self.burst_size)
 
 
     def update_detector_params(self):
         sender = self.sender()
 
-        self.params_filter.child('Low Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][0], blockSignal=self.update_fft_params)
-        self.params_filter.child('High Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][1], blockSignal=self.update_fft_params)
-        self.params_fft.child('nperseg').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg'], blockSignal=self.update_fft_params)
-        self.params_fft.child('noverlap').sigValueChanged.disconnect(self.update_fft_params)
-        self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
-        self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
-        self.params_fft.child('noverlap').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['noverlap'], blockSignal=self.update_fft_params)
-        self.params_fft.child('nfft').sigValueChanged.disconnect(self.update_fft_params)
-        self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
-        self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
-        self.params_fft.child('nfft').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nfft'], blockSignal=self.update_fft_params)
-        self.params_fft.child('Subtract dispersion').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract'], blockSignal=self.update_fft_params)
+        self.set_saved_params()
 
         if sender == self.params_detector.child('Band'):
             if sender.value() == 'V':
@@ -812,8 +809,6 @@ class PlotWindow(QMainWindow):
             self.update_fft()
             self.update_all_beatf()
             self.update_profile()
-        else:
-            self.update_all_beatf()
 
 
     def update_fft_params(self):
@@ -842,8 +837,10 @@ class PlotWindow(QMainWindow):
             value = int(self.params_fft.child('burst size (odd)').value())
             if value % 2 == 0:
                 self.params_fft.child('burst size (odd)').setValue(value - 1, blockSignal=self.update_fft_params)
+                self.burst_size = value - 1
             else:
                 self.params_fft.child('burst size (odd)').setValue(value, blockSignal=self.update_fft_params)
+                self.burst_size = value
 
             lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
             upper_limit = int(len(rpspy.get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
@@ -872,7 +869,10 @@ class PlotWindow(QMainWindow):
 
         if not self.supress_updates:
             self.update_fft()
-            self.update_one_beatf()
+            if sender == self.params_fft.child('burst size (odd)'):
+                self.update_all_beatf()
+            else:
+                self.update_one_beatf()
             self.update_profile()
     
 
