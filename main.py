@@ -1,5 +1,6 @@
 import sys
 import numpy as np
+import json
 from scipy.signal import spectrogram
 from scipy.fft import fftshift
 from PyQt5.QtWidgets import QApplication, QMainWindow, QHeaderView
@@ -8,10 +9,10 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.dockarea import Dock, DockArea
 from pyqtgraph.parametertree import Parameter, ParameterTree
-from joblib import Parallel, delayed
 import rpspy
 import func_aux
 import time
+
 
 #TODO: Set limits of range view for the other graphs
 #TODO: Remove hardcoded values and add them here
@@ -213,6 +214,15 @@ class PlotWindow(QMainWindow):
             {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'},
             {'name': 'Shot', 'type': 'int'},
         ])
+        self.params_file.child('Open').setValue('')
+
+        self.params_config = Parameter.create(name='Configuration', type='group', children=[
+            {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)'},
+            {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)'}
+        ])
+        self.params_config.child('Save').setValue('')
+        self.params_config.child('Load').setValue('')
+
         self.params_detector = Parameter.create(name='Detector', type='group', children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
             {'name': 'Side', 'type': 'list', 'limits': ['HFS', 'LFS']}
@@ -280,6 +290,7 @@ class PlotWindow(QMainWindow):
         
         
         if self.params_added == False:
+            self.param_tree.addParameters(self.params_config)
             self.param_tree.addParameters(self.params_detector)
             self.param_tree.addParameters(self.params_sweep)
             self.param_tree.addParameters(self.params_fft)
@@ -288,6 +299,10 @@ class PlotWindow(QMainWindow):
             self.params_added = True
 
         # Connect the parameters to the functions-----------------------------------
+
+        # Connect the save and load buttons to the handling functions
+        self.params_config.child('Save').sigValueChanged.connect(self.save_config)
+        self.params_config.child('Load').sigValueChanged.connect(self.load_config)
 
         # Connect the lists to update the plot
         self.params_detector.child('Band').sigValueChanged.connect(self.update_detector_params)
@@ -338,7 +353,7 @@ class PlotWindow(QMainWindow):
         self.params_filter.child('High Filter').setLimits((abs(self.f_beat[0] - self.f_beat[1]), np.inf))
         self.params_reconstruct.child('Start Time').setLimits((0, len(rpspy.get_timestamps(self.shot, self.file_path)) * (rpspy.get_timestamps(self.shot, self.file_path)[1] - rpspy.get_timestamps(self.shot, self.file_path)[0])))
         self.params_reconstruct.child('End Time').setLimits((0, len(rpspy.get_timestamps(self.shot, self.file_path)) * (rpspy.get_timestamps(self.shot, self.file_path)[1] - rpspy.get_timestamps(self.shot, self.file_path)[0])))
-        
+
 
     def update_plot(self):
         start_time = time.time()
@@ -686,6 +701,60 @@ class PlotWindow(QMainWindow):
         return y_max
 
 # Parameters ---------------------------------------------------------------------------------------------------------------------
+
+    def save_config(self):
+        path = self.params_config.child('Save').value()
+
+        data = {'parameters': self.spect_params,
+                'filters': self.filters}
+        
+        with open(path, 'w') as file:
+            json.dump(data, file, indent=4)
+        
+        print(f"Data saved to {path}")
+
+        # Workaround to force sigValueChanged and overwright existing file
+        self.params_config.child('Save').setValue(path + ' (saved)', blockSignal=self.save_config)
+        self.params_config.child('Load').setValue('', blockSignal=self.load_config)
+
+
+    def load_config(self):
+        path = self.params_config.child('Load').value()
+        
+        with open(path, 'r') as file:
+            # Parse JSON content
+            data = json.load(file)
+
+            # Extract data from the parsed JSON
+            self.spect_params = data.get("parameters", {})
+            self.filters = data.get("filters", {})
+
+        self.update_config_params()
+
+        # Workaround to force sigValueChanged and load from overwritten file
+        self.params_config.child('Load').setValue(path + ' (loaded)', blockSignal=self.load_config)
+        self.params_config.child('Save').setValue('', blockSignal=self.save_config)
+
+
+    def update_config_params(self):
+        self.params_filter.child('Low Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][0], blockSignal=self.update_fft_params)
+        self.params_filter.child('High Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][1], blockSignal=self.update_fft_params)
+        self.params_fft.child('nperseg').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg'], blockSignal=self.update_fft_params)
+        self.params_fft.child('noverlap').sigValueChanged.disconnect(self.update_fft_params)
+        self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
+        self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
+        self.params_fft.child('noverlap').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['noverlap'], blockSignal=self.update_fft_params)
+        self.params_fft.child('nfft').sigValueChanged.disconnect(self.update_fft_params)
+        self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
+        self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
+        self.params_fft.child('nfft').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nfft'], blockSignal=self.update_fft_params)
+        self.params_fft.child('Subtract dispersion').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract'], blockSignal=self.update_fft_params)
+
+        self.update_plot()
+        self.update_fft()
+        self.update_all_beatf()
+        self.update_profile()
+
 
     def update_detector_params(self):
         sender = self.sender()

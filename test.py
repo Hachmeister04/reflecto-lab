@@ -8,7 +8,7 @@ demonstrates a variety of different parameter types (int, float, list, etc.)
 as well as some customized parameter types """
 
 
-# `makeAllParamTypes` creates several parameters from a dictionary of config specs.
+""" # `makeAllParamTypes` creates several parameters from a dictionary of config specs.
 # This contains information about the options for each parameter so they can be directly
 # inserted into the example parameter tree. To create your own parameters, simply follow
 # the guidelines demonstrated by other parameters created here.
@@ -155,3 +155,4 @@ assert pg.eq(compareState, state)
 
 if __name__ == '__main__':
     pg.exec()
+ """
