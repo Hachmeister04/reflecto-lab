@@ -16,6 +16,7 @@ import time
 
 #TODO: Set limits of range view for the other graphs
 #TODO: Remove hardcoded values and add them here
+#TODO: Comment EVERYTHINGS
 
 # Window
 WINDOW_SIZE = (1600, 800)
@@ -341,6 +342,7 @@ class PlotWindow(QMainWindow):
         self.update_plot()
         self.update_fft()
         self.update_all_beatf()
+        self.draw_beatf()
         self.update_profile()
 
         # Set limits to the parameters----------------------------------------------
@@ -371,6 +373,7 @@ class PlotWindow(QMainWindow):
             self.signal_type = 'real'
             
         self.data = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal_type, self.sweep)[0]
+        self.data -= 2**11 if self.signal_type == 'real' else (2**11 + 1j * 2**11)
         self.x_data = func_aux.cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
         self.x_data, self.data = rpspy.linearize(self.x_data, self.data)
 
@@ -392,8 +395,8 @@ class PlotWindow(QMainWindow):
         
         self.plot_sweep.setLimits(xMin=self.x_data[0],
                                 xMax=self.x_data[-1],
-                                yMin=0,
-                                yMax=2**12)
+                                yMin=-2**11,
+                                yMax=2**11)
         
         """ self.plot_sweep.setRange(xRange=(self.x_data[0], self.x_data[-1]),
                                     yRange=(0, 2**12)) """
@@ -419,7 +422,6 @@ class PlotWindow(QMainWindow):
 
 
     def draw_spectrogram(self):
-        #TODO: Fix scale of graphs when changing sweeps
         if self.params_fft.child('Scale').value() == 'Normalized':
             Sxx_copy = np.array(self.Sxx)
             max_vals = np.max(Sxx_copy, axis=0)
@@ -498,56 +500,41 @@ class PlotWindow(QMainWindow):
         self.plot_spect.plot(self.f_probe, self.y_beatf, pen=pg.mkPen(color='r', width=2))
 
 
+    def update_one_beatf(self, band, side):
+        if side == self.side and band == self.band:
+            self.df_dt = (self.f[-1] - self.f[0])/((len(self.f) - 1)*(1/self.fs))
+            
+            y_beat_time = (self.y_beatf - self.y_dis) / self.df_dt
+
+            self.beat_frequencies[side][band] = [self.f_probe, self.y_beatf, y_beat_time, self.df_dt]
+        
+        else:
+            nperseg = self.spect_params[side][band]['nperseg']
+            noverlap = self.spect_params[side][band]['noverlap']
+            nfft = self.spect_params[side][band]['nfft']
+            burst_size = self.burst_size
+            subtract = self.spect_params[side][band]['subtract']
+
+            f, fs, f_beat, t, f_probe, Sxx = self.calculate_spectrogram(band, side, nperseg, noverlap, nfft, burst_size, subtract)
+
+            y_dis = self.calculate_dispersion(band, side, f_probe, t, subtract)
+
+            y_beatf = self.calculate_beatf(band, side, Sxx, y_dis, f_beat, fs)
+
+            df_dt = (f[-1] - f[0])/((len(f) - 1)*(1/fs))
+            
+            y_beat_time = (y_beatf - y_dis) / df_dt
+
+            self.beat_frequencies[side][band] = [f_probe, y_beatf, y_beat_time, df_dt]
+
+
     def update_all_beatf(self):
         start_time = time.time()
 
         for side in self.spect_params:
             for band in self.spect_params[side]:
-                if side == self.side and band == self.band:
-                    
-                    df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
-                    
-                    y_beat_time = (self.y_beatf - self.y_dis) / df_dt
+                self.update_one_beatf(band, side)
 
-                    self.beat_frequencies[side][band] = [self.f_probe, self.y_beatf, y_beat_time, df_dt]
-                
-                else:
-                    nperseg = self.spect_params[side][band]['nperseg']
-                    noverlap = self.spect_params[side][band]['noverlap']
-                    nfft = self.spect_params[side][band]['nfft']
-                    burst_size = self.burst_size
-                    subtract = self.spect_params[side][band]['subtract']
-
-                    _, fs, f_beat, t, f_probe, Sxx = self.calculate_spectrogram(band, side, nperseg, noverlap, nfft, burst_size, subtract)
-
-                    y_dis = self.calculate_dispersion(band, side, f_probe, t, subtract)
-
-                    y_beatf = self.calculate_beatf(band, side, Sxx, y_dis, f_beat, fs)
-
-                    df_dt = (f_probe[-1] - f_probe[0])/((len(f_probe) - 1)*(1/fs))
-                    
-                    y_beat_time = (y_beatf - y_dis) / df_dt
-
-                    self.beat_frequencies[side][band] = [f_probe, y_beatf, y_beat_time, df_dt]
-                    
-        
-        self.draw_beatf()
-
-        print("beatf's")
-        print("--- %s seconds ---" % (time.time() - start_time))
-    
-
-    def update_one_beatf(self):
-        start_time = time.time()
-
-        df_dt = (self.f_probe[-1] - self.f_probe[0])/((len(self.f_probe) - 1)*(1/self.fs))
-        
-        y_beat_time = (self.y_beatf - self.y_dis) / df_dt
-
-        self.beat_frequencies[self.side][self.band] = [self.f_probe, self.y_beatf, y_beat_time, df_dt]
-
-        self.draw_beatf()
-        
         print("beatf's")
         print("--- %s seconds ---" % (time.time() - start_time))
 
@@ -593,6 +580,18 @@ class PlotWindow(QMainWindow):
         )
         )
         
+        # Handle NaNs in these arrays
+        # HFS
+        nan_mask = np.isnan(self.all_delay_HFS_beat_time)
+        self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~nan_mask]
+        self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~nan_mask]
+
+        # LFS
+        nan_mask = np.isnan(self.all_delay_LFS_beat_time)
+        self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~nan_mask]
+        self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~nan_mask]
+
+
         self.plot_beatf.plot(self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
         self.plot_beatf.plot(self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
 
@@ -600,6 +599,7 @@ class PlotWindow(QMainWindow):
             for band in self.beat_frequencies[side]:
                 f_probe = self.beat_frequencies[side][band][0]
                 beat_time = self.beat_frequencies[side][band][2]
+                #beat_freq = self.beat_frequencies[side][band][1]
                 self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color='r' if side == 'HFS' else 'b', width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
@@ -607,18 +607,17 @@ class PlotWindow(QMainWindow):
 
 
     def update_profile(self):
+        start_time = time.time()
+
         group_delay_HFS_x = np.linspace(self.all_delay_HFS_f_probe[0], self.all_delay_HFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
         group_delay_HFS_y = np.interp(group_delay_HFS_x, self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time)
 
         group_delay_LFS_x = np.linspace(self.all_delay_LFS_f_probe[0], self.all_delay_LFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
         group_delay_LFS_y = np.interp(group_delay_LFS_x, self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time)
-
-        start_time = time.time()
+        
         r_HFS = rpspy.profile_inversion(group_delay_HFS_x, group_delay_HFS_y, pwld_batch=True)
         r_LFS = rpspy.profile_inversion(group_delay_LFS_x, group_delay_LFS_y, pwld_batch=True)
-        print("profile")
-        print("--- %s seconds ---" % (time.time() - start_time))
-
+        
         ne_HFS = rpspy.f_to_ne(group_delay_HFS_x)
         ne_LFS = rpspy.f_to_ne(group_delay_LFS_x)
 
@@ -633,6 +632,9 @@ class PlotWindow(QMainWindow):
         #                             maxYRange=max(self.density*1e-19)-min(self.density*1e-19))
         self.plot_profile.setLabel('bottom', 'radius', units='m')
         self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
+
+        print("profile")
+        print("--- %s seconds ---" % (time.time() - start_time))
     
 # Calculate----------------------------------------------------------------------------------------------------------------------
     
@@ -646,14 +648,19 @@ class PlotWindow(QMainWindow):
         f = func_aux.cached_get_linearization(self.shot, 24, band, shotfile_dir=self.file_path)
         f, linearized_burst = rpspy.linearize(f, burst)
 
-        if band == 'V' and subtract == True:
-            correction = func_aux.get_dispersion_phase()  # Eventually will be called with arguments like shot number, band, side, etc
-            corrected_burst = linearized_burst - (2**11 + 1j * 2**11)  # Center around zero
-            corrected_burst = corrected_burst * correction  # Multiply by dispersion phase
+        fs = rpspy.get_sampling_frequency(self.shot, self.file_path)
+
+        if band == 'V':
+            linearized_burst -= (2**11 + 1j * 2**11)
+        else:
+            linearized_burst -= 2**11
+
+        if subtract == True:
+            df_dt = (f[-1] - f[0])/((len(f) - 1)*(1/fs))
+            correction = rpspy.get_dispersion_phase(self.shot, band, side, f[0], df_dt, np.arange(len(f))/fs)
+            corrected_burst = linearized_burst * correction  # Multiply by dispersion phase
         else:
             corrected_burst = linearized_burst
-
-        fs = rpspy.get_sampling_frequency(self.shot, self.file_path)
 
         f_beat, t, Sxx = spectrogram(
             corrected_burst, 
@@ -661,7 +668,8 @@ class PlotWindow(QMainWindow):
             nperseg=nperseg, 
             noverlap=noverlap, 
             nfft=nfft,
-            return_onesided=False if corrected_burst.dtype == complex else True
+            return_onesided=False if corrected_burst.dtype == complex else True,
+            detrend=False
             )
 
         f_probe = np.interp(t, np.arange(len(f))/fs, f)
@@ -808,6 +816,7 @@ class PlotWindow(QMainWindow):
         if not self.supress_updates:
             self.update_fft()
             self.update_all_beatf()
+            self.draw_beatf()
             self.update_profile()
 
 
@@ -871,8 +880,10 @@ class PlotWindow(QMainWindow):
             self.update_fft()
             if sender == self.params_fft.child('burst size (odd)'):
                 self.update_all_beatf()
+                self.draw_beatf()
             else:
-                self.update_one_beatf()
+                self.update_one_beatf(self.band, self.side)
+                self.draw_beatf()
             self.update_profile()
     
 
