@@ -18,6 +18,9 @@ import time
 #TODO: Remove hardcoded values and add them here
 #TODO: Comment EVERYTHINGS
 
+# Development option
+SANDBOX = False  # If True, the program will be able to use sandbox data from shot 40112
+
 # Window
 WINDOW_SIZE = (1600, 800)
 PARAMETER_TREE_WIDTH_PROPORTION = 0.3
@@ -374,7 +377,11 @@ class PlotWindow(QMainWindow):
             
         self.data = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal_type, self.sweep)[0]
         self.data -= 2**11 if self.signal_type == 'real' else (2**11 + 1j * 2**11)
-        self.x_data = func_aux.cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
+
+        if SANDBOX:
+            self.x_data = func_aux.cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
+        else:
+            self.x_data = func_aux.cached_get_auto_linearization_from_shares(self.shot, self.band)
         self.x_data, self.data = rpspy.linearize(self.x_data, self.data)
 
         self.draw_plot()
@@ -442,6 +449,10 @@ class PlotWindow(QMainWindow):
 
         i1 = pg.ImageItem(image=Sxx_copy.T) # Note: `Sxx` needs to be transposed to fit the display format
         i1.setTransform(transform) # assign transform
+
+        # Check if Sxx has nan values
+        if np.isnan(Sxx_copy).any():
+            print("Warning: Sxx has NaN values")
         
         self.plot_spect.clear() # Clear previous plot
         self.plot_spect.addItem(i1)
@@ -645,7 +656,11 @@ class PlotWindow(QMainWindow):
             signal_type = 'real'
 
         burst = rpspy.get_band_signal(self.shot, self.file_path, band, side, signal_type, self.sweep - burst_size // 2, burst_size)
-        f = func_aux.cached_get_linearization(self.shot, 24, band, shotfile_dir=self.file_path)
+        # f = func_aux.cached_get_linearization(self.shot, 24, band, shotfile_dir=self.file_path)
+        if SANDBOX:
+            f = func_aux.cached_get_linearization(self.shot, 24, band, shotfile_dir=self.file_path)
+        else:
+            f = func_aux.cached_get_auto_linearization_from_shares(self.shot, band)
         f, linearized_burst = rpspy.linearize(f, burst)
 
         fs = rpspy.get_sampling_frequency(self.shot, self.file_path)

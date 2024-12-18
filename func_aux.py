@@ -27,8 +27,15 @@ def cached_get_linearization(*args, **kwargs):
     return rpspy.get_linearization(*args, **kwargs)
 
 
+@lru_cache(maxsize=50)
+def cached_get_auto_linearization_from_shares(shot, band):
+    reference_shot, reference_sweep = rpspy.get_linearization_reference(shot)
+    return rpspy.get_linearization(reference_shot, reference_sweep, band)
+
+
 @lru_cache(maxsize=100)
 def cached_full_profile_reconstruction(*args, **kwargs):
     kwargs['spectrogram_options'] = json.loads(kwargs['spectrogram_options'])
     kwargs['filters'] = json.loads(kwargs['filters'])
     return rpspy.full_profile_reconstruction(*args, **kwargs)
+
