@@ -19,7 +19,7 @@ import time
 #TODO: Comment EVERYTHINGS
 
 # Development option
-SANDBOX = False  # If True, the program will be able to use sandbox data from shot 40112
+SANDBOX = True  # If True, the program will be able to use sandbox data from local shots
 
 # Window
 WINDOW_SIZE = (1600, 800)
@@ -205,6 +205,20 @@ class PlotWindow(QMainWindow):
 
         # Set a central widget
         self.setCentralWidget(self.area)
+
+        # Create all the plots and add to docks ------------------------------------
+
+        self.plot_sweep = pg.PlotWidget(title="Sweep")
+        self.dock_sweep.addWidget(self.plot_sweep)
+
+        self.plot_spect = pg.PlotWidget(title="Spectrogram")
+        self.dock_spect.addWidget(self.plot_spect)
+
+        self.plot_beatf = pg.PlotWidget(title="Beat Frequencies")
+        self.dock_beatf.addWidget(self.plot_beatf)
+
+        self.plot_profile = pg.PlotWidget(title="Profile")
+        self.dock_profile.addWidget(self.plot_profile)
         
         # Create widgets -----------------------------------------------------------
 
@@ -223,23 +237,23 @@ class PlotWindow(QMainWindow):
         ])
         self.params_file.child('Open').setValue('')
 
-        self.params_config = Parameter.create(name='Configuration', type='group', children=[
+        self.params_config = Parameter.create(name='Configuration', type='group', visible=False, children=[
             {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)'},
             {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)'}
         ])
         self.params_config.child('Save').setValue('')
         self.params_config.child('Load').setValue('')
 
-        self.params_detector = Parameter.create(name='Detector', type='group', children=[
+        self.params_detector = Parameter.create(name='Detector', type='group', visible=False, children=[
             {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
             {'name': 'Side', 'type': 'list', 'limits': ['HFS', 'LFS']}
         ])
-        self.params_sweep = Parameter.create(name='Sweep', type='group', children=[
+        self.params_sweep = Parameter.create(name='Sweep', type='group', visible=False, children=[
             {'name': 'Sweep nº', 'type': 'float', 'value': 1, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
             {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
-        self.params_fft = Parameter.create(name='Spectrogram', type='group', children=[
+        self.params_fft = Parameter.create(name='Spectrogram', type='group', visible=False, children=[
             {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG},
             {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP},
             {'name': 'nfft', 'type': 'float', 'value': DEFAULT_NFFT},
@@ -248,11 +262,11 @@ class PlotWindow(QMainWindow):
             {'name': 'Subtract dispersion', 'type': 'bool', 'value': False, 'enabled': False},
             {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'}
         ])
-        self.params_filter = Parameter.create(name='Filters (above dispersion)', type='group', children=[
+        self.params_filter = Parameter.create(name='Filters (above dispersion)', type='group', visible=False, children=[
             {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True},
             {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True}
         ])
-        self.params_reconstruct = Parameter.create(name='Reconstruct Shot', type='group', children=[
+        self.params_reconstruct = Parameter.create(name='Reconstruct Shot', type='group', visible=False, children=[
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True},
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True},
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True},
@@ -260,52 +274,18 @@ class PlotWindow(QMainWindow):
         ])
 
         self.param_tree.addParameters(self.params_file)
+        self.param_tree.addParameters(self.params_config)
+        self.param_tree.addParameters(self.params_detector)
+        self.param_tree.addParameters(self.params_sweep)
+        self.param_tree.addParameters(self.params_fft)
+        self.param_tree.addParameters(self.params_filter)
+        self.param_tree.addParameters(self.params_reconstruct)
 
-        # Create all the plots and add to docks ------------------------------------
-
-        self.plot_sweep = pg.PlotWidget(title="Sweep")
-        self.dock_sweep.addWidget(self.plot_sweep)
-
-        self.plot_spect = pg.PlotWidget(title="Spectrogram")
-        self.dock_spect.addWidget(self.plot_spect)
-
-        self.plot_beatf = pg.PlotWidget(title="Beat Frequencies")
-        self.dock_beatf.addWidget(self.plot_beatf)
-
-        self.plot_profile = pg.PlotWidget(title="Profile")
-        self.dock_profile.addWidget(self.plot_profile)
-
-        #---------------------------------------------------------------------------
+        # Connect the parameters to the functions-----------------------------------
 
         # Connect the file to the function that displays the rest of the parameters and the graphs
         self.params_file.child('Open').sigValueChanged.connect(self.update_shot)
         self.params_file.child('Shot').sigValueChanged.connect(self.update_shot)
-    
-
-    def update_shot(self):
-        sender = self.sender()
-
-        # Name the path to the directory
-        if sender == self.params_file.child('Open'):
-            self.file_path = self.params_file.child('Open').value()
-            self.shot = func_aux.get_shot_from_path(self.file_path)
-            self.params_file.child('Shot').setValue(self.shot, blockSignal=self.update_shot)
-        elif sender == self.params_file.child('Shot'):
-            self.file_path = func_aux.get_path_from_shot(self.params_file.child('Shot').value())
-            self.shot = self.params_file.child('Shot').value()
-            self.params_file.child('Open').setValue(self.file_path, blockSignal=self.update_shot)
-        
-        
-        if self.params_added == False:
-            self.param_tree.addParameters(self.params_config)
-            self.param_tree.addParameters(self.params_detector)
-            self.param_tree.addParameters(self.params_sweep)
-            self.param_tree.addParameters(self.params_fft)
-            self.param_tree.addParameters(self.params_filter)
-            self.param_tree.addParameters(self.params_reconstruct)
-            self.params_added = True
-
-        # Connect the parameters to the functions-----------------------------------
 
         # Connect the save and load buttons to the handling functions
         self.params_config.child('Save').sigValueChanged.connect(self.save_config)
@@ -340,7 +320,30 @@ class PlotWindow(QMainWindow):
         #Connect the button to reconstruct shot
         self.params_reconstruct.child('Reconstruct Shot').sigActivated.connect(self.request_reconstruct)
 
-        #---------------------------------------------------------------------------
+
+    def update_shot(self):
+        sender = self.sender()
+
+        # Name the path to the directory
+        if sender == self.params_file.child('Open'):
+            self.file_path = self.params_file.child('Open').value()
+            self.shot = func_aux.get_shot_from_path(self.file_path)
+            self.params_file.child('Shot').setValue(self.shot, blockSignal=self.update_shot)
+        elif sender == self.params_file.child('Shot'):
+            self.file_path = func_aux.get_path_from_shot(self.params_file.child('Shot').value())
+            self.shot = self.params_file.child('Shot').value()
+            self.params_file.child('Open').setValue(self.file_path, blockSignal=self.update_shot)
+
+        #Show all parameters-----------------------------------------------------------
+
+        self.params_config.setOpts(visible=True)
+        self.params_detector.setOpts(visible=True)
+        self.params_sweep.setOpts(visible=True)
+        self.params_fft.setOpts(visible=True)
+        self.params_filter.setOpts(visible=True)
+        self.params_reconstruct.setOpts(visible=True)
+
+        #-----------------------------------------------------------------------------
 
         self.update_plot()
         self.update_fft()
