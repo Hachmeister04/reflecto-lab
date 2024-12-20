@@ -83,7 +83,8 @@ class PlotWindow(QMainWindow):
         self.Sxx = None
         self.subtract = None
         self.params_added = False
-        self.supress_updates = False #Prevents repeated call of the update functions
+        self.supress_updates_ffts = False #Prevents repeated call of the update functions from the update_fft_params function
+        self.supress_updates_shot = False #Prevents repeated call of the update functions from the update_shot function
         
         #Store the spectrogram parameters
         self.spect_params = {
@@ -343,7 +344,18 @@ class PlotWindow(QMainWindow):
         self.params_filter.setOpts(visible=True)
         self.params_reconstruct.setOpts(visible=True)
 
-        #-----------------------------------------------------------------------------
+        # Set limits to the parameters----------------------------------------------
+
+
+        self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
+
+        # To handle shots with different number of sweeps
+        self.supress_updates_shot = True
+        self.params_sweep.child('Sweep').setLimits((1, len(self.time_stamps)))
+        self.params_sweep.child('Sweep nº').setLimits((1, len(self.time_stamps)))
+        self.params_sweep.child('Timestamp').setLimits((self.time_stamps[0], self.time_stamps[-1]))
+        self.params_sweep.child('Timestamp').setOpts(step=self.time_stamps[1])
+        self.supress_updates_shot = False
 
         self.update_plot()
         self.update_fft()
@@ -351,19 +363,16 @@ class PlotWindow(QMainWindow):
         self.draw_beatf()
         self.update_profile()
 
-        # Set limits to the parameters----------------------------------------------
-
-        self.params_sweep.child('Sweep').setLimits((1, len(rpspy.get_timestamps(self.shot, self.file_path))))
-        self.params_sweep.child('Sweep nº').setLimits((1, len(rpspy.get_timestamps(self.shot, self.file_path))))
-        self.params_sweep.child('Timestamp').setLimits((rpspy.get_timestamps(self.shot, self.file_path)[0], rpspy.get_timestamps(self.shot, self.file_path)[-1]))
-        self.params_sweep.child('Timestamp').setOpts(step=rpspy.get_timestamps(self.shot, self.file_path)[1])
+        #TODO: This assumes that the number of points in a sweep is the same for all shots.
+        #      If it is not, then these limits should be updated. However, that brings the possibility
+        #      that the parameters stored in the dictionary for all bands and sides are wrong.
         self.params_fft.child('nperseg').setLimits((MIN_NPERSEG, len(self.data)))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), MAX_NFFT))
         self.params_filter.child('Low Filter').setLimits((0, np.inf))
         self.params_filter.child('High Filter').setLimits((abs(self.f_beat[0] - self.f_beat[1]), np.inf))
-        self.params_reconstruct.child('Start Time').setLimits((0, len(rpspy.get_timestamps(self.shot, self.file_path)) * (rpspy.get_timestamps(self.shot, self.file_path)[1] - rpspy.get_timestamps(self.shot, self.file_path)[0])))
-        self.params_reconstruct.child('End Time').setLimits((0, len(rpspy.get_timestamps(self.shot, self.file_path)) * (rpspy.get_timestamps(self.shot, self.file_path)[1] - rpspy.get_timestamps(self.shot, self.file_path)[0])))
+        self.params_reconstruct.child('Start Time').setLimits((0, len(self.time_stamps) * (self.time_stamps[1] - self.time_stamps[0])))
+        self.params_reconstruct.child('End Time').setLimits((0, len(self.time_stamps) * (self.time_stamps[1] - self.time_stamps[0])))
 
 
     def update_plot(self):
@@ -810,32 +819,33 @@ class PlotWindow(QMainWindow):
 
         if sender == self.params_sweep.child('Sweep'):
             value = self.params_sweep.child('Sweep').value()
-            timestamp = rpspy.get_timestamps(self.shot, self.file_path)[value - 1]
+            timestamp = self.time_stamps[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
 
         elif sender == self.params_sweep.child('Sweep nº'):
             value = int(self.params_sweep.child('Sweep nº').value())
-            timestamp = rpspy.get_timestamps(self.shot, self.file_path)[value - 1]
+            timestamp = self.time_stamps[value - 1]
             self.params_sweep.child('Sweep nº').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep').setValue(value, blockSignal=self.update_plot_params)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             
         elif sender == self.params_sweep.child('Timestamp'):
             value = self.params_sweep.child('Timestamp').value()
-            timestamp = func_aux.round_to_nearest(value, rpspy.get_timestamps(self.shot, self.file_path))
-            index = np.where(rpspy.get_timestamps(self.shot, self.file_path) == timestamp)
+            timestamp = func_aux.round_to_nearest(value, self.time_stamps)
+            index = np.where(self.time_stamps == timestamp)
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
         
-        self.update_plot()
+        if not self.supress_updates_shot:
+            self.update_plot()
 
-        if not self.supress_updates:
-            self.update_fft()
-            self.update_all_beatf()
-            self.draw_beatf()
-            self.update_profile()
+            if not self.supress_updates_ffts:
+                self.update_fft()
+                self.update_all_beatf()
+                self.draw_beatf()
+                self.update_profile()
 
 
     def update_fft_params(self):
@@ -845,10 +855,10 @@ class PlotWindow(QMainWindow):
             value = int(self.params_fft.child('nperseg').value())
             self.spect_params[self.side][self.band]['nperseg'] = value
             self.params_fft.child('nperseg').setValue(value, blockSignal=self.update_fft_params)
-            self.supress_updates = True
+            self.supress_updates_ffts = True
             self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
             self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
-            self.supress_updates = False
+            self.supress_updates_ffts = False
         
         elif sender == self.params_fft.child('noverlap'):
             value = int(self.params_fft.child('noverlap').value())
@@ -870,12 +880,12 @@ class PlotWindow(QMainWindow):
                 self.burst_size = value
 
             lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
-            upper_limit = int(len(rpspy.get_timestamps(self.shot, self.file_path)) - self.params_fft.child('burst size (odd)').value() // 2)
-            self.supress_updates = True
+            upper_limit = int(len(self.time_stamps) - self.params_fft.child('burst size (odd)').value() // 2)
+            self.supress_updates_ffts = True
             self.params_sweep.child('Sweep').setLimits([lower_limit, upper_limit])
             self.params_sweep.child('Sweep nº').setLimits([lower_limit, upper_limit])
-            self.params_sweep.child('Timestamp').setLimits([rpspy.get_timestamps(self.shot, self.file_path)[lower_limit - 1], rpspy.get_timestamps(self.shot, self.file_path)[upper_limit - 1]])
-            self.supress_updates = False
+            self.params_sweep.child('Timestamp').setLimits([self.time_stamps[lower_limit - 1], self.time_stamps[upper_limit - 1]])
+            self.supress_updates_ffts = False
 
         elif sender == self.params_fft.child('Subtract dispersion'):
             self.spect_params[self.side][self.band]['subtract'] = self.params_fft.child('Subtract dispersion').value()
@@ -894,7 +904,7 @@ class PlotWindow(QMainWindow):
                 self.params_filter.child('Low Filter').setValue(self.filters[self.side][self.band][0], blockSignal=self.update_fft_params)
             self.draw_spectrogram()
 
-        if not self.supress_updates:
+        if not self.supress_updates_ffts:
             self.update_fft()
             if sender == self.params_fft.child('burst size (odd)'):
                 self.update_all_beatf()
