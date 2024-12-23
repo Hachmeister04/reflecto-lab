@@ -398,6 +398,7 @@ class PlotWindow(QMainWindow):
 
         self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
 
+        #TODO: Handle cases with different number of sweeps and different number of points per sweep
         self.params_sweep.child('Sweep').setLimits((1, len(self.time_stamps)))
         self.params_sweep.child('Sweep nº').setLimits((1, len(self.time_stamps)))
         self.params_sweep.child('Timestamp').setLimits((self.time_stamps[0], self.time_stamps[-1]))
