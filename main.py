@@ -74,8 +74,9 @@ class PlotWindow(QMainWindow):
         self._thread.start()
 
         # Define some useful attributes
-        self.params_added = False
         self.supress_updates_ffts = False #Prevents repeated call of the update functions from the update_fft_params function
+        self.shot = 0
+        self.file_path = ''
         
         #Store the spectrogram parameters
         self.spect_params = {
@@ -344,13 +345,32 @@ class PlotWindow(QMainWindow):
 
         # Name the path to the directory
         if sender == self.params_file.child('Open'):
-            self.file_path = self.params_file.child('Open').value()
-            self.shot = func_aux.get_shot_from_path(self.file_path)
-            self.params_file.child('Shot').setValue(self.shot, blockSignal=self.update_shot)
+            file_path = self.params_file.child('Open').value()
+            try:
+                shot = func_aux.get_shot_from_path(file_path)
+                rpspy.get_timestamps(shot, file_path)
+                self.params_file.child('Shot').setValue(shot, blockSignal=self.update_shot)
+                self.shot = shot
+                self.file_path = file_path
+            except (ValueError, FileNotFoundError):
+                func_aux.show_warning()
+                return None
+            finally:
+                # workaround to avoid signal being changed twice (strange implementation of the file widget by pyqtgraph)
+                self.params_file.child('Open').setValue(self.file_path, blockSignal=self.update_shot)
+            
         elif sender == self.params_file.child('Shot'):
-            self.file_path = func_aux.get_path_from_shot(self.params_file.child('Shot').value())
-            self.shot = self.params_file.child('Shot').value()
-            self.params_file.child('Open').setValue(self.file_path, blockSignal=self.update_shot)
+            shot = self.params_file.child('Shot').value()
+            file_path = func_aux.get_path_from_shot(shot)
+            try:
+                rpspy.get_timestamps(shot, file_path)
+                self.params_file.child('Open').setValue(file_path, blockSignal=self.update_shot)
+                self.file_path = file_path
+                self.shot = shot
+            except FileNotFoundError:
+                func_aux.show_warning()
+                self.params_file.child('Shot').setValue(self.shot, blockSignal=self.update_shot)
+                return None
 
         # Show all parameters-----------------------------------------------------------
 

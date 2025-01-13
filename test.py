@@ -1,5 +1,5 @@
-import pyqtgraph.examples
-pyqtgraph.examples.run()
+""" import pyqtgraph.examples
+pyqtgraph.examples.run() """
 
 
 """ This example demonstrates the use of pyqtgraph's parametertree system. This provides
@@ -156,3 +156,28 @@ assert pg.eq(compareState, state)
 if __name__ == '__main__':
     pg.exec()
  """
+
+from PyQt5.QtWidgets import QApplication, QMessageBox
+import sys
+
+def show_warning():
+    # Create a warning message box
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Warning)
+    msg.setWindowTitle("Warning")
+    msg.setText("This is a warning message!")
+    #msg.setInformativeText("Additional details about the warning.")
+    msg.setStandardButtons(QMessageBox.Ok)
+    #msg.setDefaultButton(QMessageBox.Ok)
+    
+    # Show the message box and get the response
+    response = msg.exec()
+    if response == QMessageBox.Ok:
+        print("User clicked OK")
+    elif response == QMessageBox.Cancel:
+        print("User clicked Cancel")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    show_warning()
+    sys.exit(app.exec())

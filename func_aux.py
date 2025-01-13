@@ -3,6 +3,7 @@ import rpspy
 import json
 import numpy as np
 from functools import lru_cache
+from PyQt5.QtWidgets import QMessageBox
 
 
 def round_to_nearest(value: float, value_list: list):
@@ -10,14 +11,24 @@ def round_to_nearest(value: float, value_list: list):
 
 
 def get_shot_from_path(path: str):
-    try:
-        return int(os.path.basename(path))
-    except ValueError:
-        raise Exception("Wrong file name")
+    return int(os.path.basename(path))
 
 
 def get_path_from_shot(shot: int):
     return f"/shares/experiments/aug-rawfiles/RTR/{shot//10}/{shot}"
+
+def show_warning():
+    # Create a warning message box
+    msg = QMessageBox()
+    msg.setIcon(QMessageBox.Warning)
+    msg.setWindowTitle("Warning")
+    msg.setText("Shot not found!!!!!!")
+    msg.setInformativeText("Critical error! Self-destruction in 3... 2... 1...")
+    msg.setStandardButtons(QMessageBox.Ok)
+    #msg.setDefaultButton(QMessageBox.Ok)
+    
+    # Show the message box
+    msg.exec()
 
 
 #TODO: Use this for other functions
