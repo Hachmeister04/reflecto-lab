@@ -468,8 +468,8 @@ class PlotWindow(QMainWindow):
                                 yMin=-2**11,
                                 yMax=2**11)
         
-        """ self.plot_sweep.setRange(xRange=(self.x_data[0], self.x_data[-1]),
-                                    yRange=(0, 2**12)) """
+        self.plot_sweep.setRange(xRange=(self.x_data[0], self.x_data[-1]),
+                                    yRange=(-2**11, 2**11))
         
         self.plot_sweep.setLabel('bottom', 'Probing Frequency', units='Hz')
 
