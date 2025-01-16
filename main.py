@@ -17,6 +17,7 @@ import time
 #TODO: Set limits of range view for the other graphs
 #TODO: Remove hardcoded values and add them here
 #TODO: Comment EVERYTHINGS
+#TODO: Add a legend to the beat frequencies plot (top left corner)
 
 # Development option
 SANDBOX = True  # If True, the program will be able to use sandbox data from local shots
@@ -53,6 +54,10 @@ DECIMALS_TIMESTAMP = 8
 
 # Profile Properties
 PROFILE_INVERSION_RESOLUTION = 150 #points
+
+# Profile Colors
+HFS_COLOR = 'r'
+LFS_COLOR = 'b'
 
 #TODO: Segment the code
 class PlotWindow(QMainWindow):
@@ -397,15 +402,8 @@ class PlotWindow(QMainWindow):
 
         for side in self.spect_params:
             for band in self.spect_params[side]:
-                nperseg = self.spect_params[side][band]['nperseg']
-                noverlap = self.spect_params[side][band]['noverlap']
-                nfft = self.spect_params[side][band]['nfft']
-                burst_size = self.burst_size
-                sweep = burst_size // 2
-                subtract_dispersion = self.spect_params[side][band]['subtract dispersion']
-
-                self.background_spectrograms[side][band] = self.calculate_spectrogram(band, side, nperseg, noverlap, nfft, sweep, burst_size, subtract_dispersion)[5]
-
+                self.calculate_background(band, side)
+        
         # Plot everything-------------------------------------------------------------------
 
         self.update_plot()
@@ -678,7 +676,7 @@ class PlotWindow(QMainWindow):
                 f_probe = self.beat_frequencies[side][band][0]
                 beat_time = self.beat_frequencies[side][band][2]
                 #beat_freq = self.beat_frequencies[side][band][1]
-                self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color='r' if side == 'HFS' else 'b', width=2))
+                self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_beatf.setLabel('left', 'Time Delay', units='s')
@@ -700,8 +698,8 @@ class PlotWindow(QMainWindow):
         ne_LFS = rpspy.f_to_ne(group_delay_LFS_x)
 
         self.plot_profile.clear()
-        self.plot_profile.plot(r_HFS, ne_HFS*1e-19, pen=pg.mkPen(color='r', width=2))
-        self.plot_profile.plot(r_LFS, ne_LFS*1e-19, pen=pg.mkPen(color='r', width=2))
+        self.plot_profile.plot(r_HFS, ne_HFS*1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
+        self.plot_profile.plot(r_LFS, ne_LFS*1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
         # self.plot_profile.setLimits(xMin=min(x), 
         #                             xMax=max(x), 
         #                             maxXRange=max(x)-min(x), 
@@ -793,6 +791,17 @@ class PlotWindow(QMainWindow):
         
         return y_max
     
+
+    def calculate_background(self, band, side):
+        nperseg = self.spect_params[side][band]['nperseg']
+        noverlap = self.spect_params[side][band]['noverlap']
+        nfft = self.spect_params[side][band]['nfft']
+        burst_size = self.burst_size
+        sweep = burst_size // 2
+        subtract_dispersion = self.spect_params[side][band]['subtract dispersion']
+
+        self.background_spectrograms[side][band] = self.calculate_spectrogram(band, side, nperseg, noverlap, nfft, sweep, burst_size, subtract_dispersion)[5]
+
 
     def background_subtract(self, Sxx, band, side):
         spectrogram_subtracted = np.clip(
@@ -985,10 +994,15 @@ class PlotWindow(QMainWindow):
             if sender == self.params_filter.child('Low Filter') or sender == self.params_filter.child('High Filter') or sender == self.params_fft.child('Subtract background'):
                 self.draw_spectrogram()
             else:
-                self.background_spectrograms[self.side][self.band] = self.calculate_spectrogram(self.band, self.side, self.nperseg, self.noverlap, self.nfft, self.burst_size // 2, self.burst_size, self.subtract_dispersion)[5]
+                self.calculate_background(self.band, self.side)
                 self.update_fft()
 
             if sender == self.params_fft.child('burst size (odd)'):
+                for side in self.spect_params:
+                    for band in self.spect_params[side]:
+                        if not (side == self.side and band == self.band):
+                            self.calculate_background(band, side)
+
                 self.update_all_beatf()
             else:
                 self.update_one_beatf(self.band, self.side)
