@@ -51,6 +51,9 @@ DEFAULT_TIMESTEP = 1e-3 #s
 # Plot Params
 DECIMALS_SWEEP_NUM = 6
 DECIMALS_TIMESTAMP = 8
+DECIMALS_NPERSEG = 6
+DECIMALS_NOVERLAP = 6
+DECIMALS_NFFT = 6
 
 # Profile Properties
 PROFILE_INVERSION_RESOLUTION = 150 #points
@@ -276,9 +279,9 @@ class PlotWindow(QMainWindow):
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
         self.params_fft = Parameter.create(name='Spectrogram', type='group', visible=False, children=[
-            {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG, 'delay': 0},
-            {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP, 'delay': 0},
-            {'name': 'nfft', 'type': 'float', 'value': DEFAULT_NFFT, 'delay': 0},
+            {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG, 'decimals': DECIMALS_NPERSEG, 'delay': 0},
+            {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP, 'decimals': DECIMALS_NOVERLAP, 'delay': 0},
+            {'name': 'nfft', 'type': 'float', 'value': DEFAULT_NFFT, 'decimals': DECIMALS_NFFT, 'delay': 0},
             {'name': 'burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Scale', 'type': 'checklist', 'limits': ['Normalized', 'Linear', 'Logarithmic'], 'exclusive': True, 'delay': 0},
             {'name': 'Subtract background', 'type': 'bool', 'value': False, 'delay': 0},
@@ -386,7 +389,7 @@ class PlotWindow(QMainWindow):
         self.params_filter.setOpts(visible=True)
         self.params_reconstruct.setOpts(visible=True)
 
-        # Set selfs before the plots-----------------------------------------------------
+        # Set atributes before the plots-----------------------------------------------------
 
         self.band = self.params_detector.child('Band').value()
         self.side = self.params_detector.child('Side').value()
