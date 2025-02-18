@@ -157,7 +157,7 @@ if __name__ == '__main__':
     pg.exec()
  """
 
-from PyQt5.QtWidgets import QApplication, QMessageBox
+""" from PyQt5.QtWidgets import QApplication, QMessageBox
 import sys
 
 def show_warning():
@@ -180,4 +180,39 @@ def show_warning():
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     show_warning()
-    sys.exit(app.exec())
+    sys.exit(app.exec()) """
+
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtWidgets
+from pyqtgraph.parametertree import Parameter, ParameterTree, Interactor
+
+class CustomInteractor(Interactor):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.button = QtWidgets.QPushButton("Click Me")
+        self.button.clicked.connect(self.on_button_clicked)
+        self.addWidget(self.button)
+
+    def on_button_clicked(self):
+        print("Button clicked!")
+
+app = pg.mkQApp()
+
+# Create the main parameter tree
+params = [
+    {'name': 'Action', 'type': 'group', 'children': [
+        {'name': 'Custom Button', 'type': 'interactor', 'interactor': CustomInteractor},
+    ]},
+]
+
+param_tree = ParameterTree()
+param = Parameter.create(name='params', type='group', children=params)
+param_tree.setParameters(param, showTop=False)
+
+win = QtWidgets.QWidget()
+layout = QtWidgets.QVBoxLayout()
+win.setLayout(layout)
+layout.addWidget(param_tree)
+win.show()
+
+app.exec_()

@@ -8,7 +8,7 @@ from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui
 from pyqtgraph.dockarea import Dock, DockArea
-from pyqtgraph.parametertree import Parameter, ParameterTree
+from pyqtgraph.parametertree import Parameter, ParameterTree, interact, RunOptions
 import rpspy
 import func_aux
 import time
@@ -16,7 +16,7 @@ import time
 
 #TODO: Set limits of range view for the other graphs
 #TODO: Remove hardcoded values and add them here
-#TODO: Comment EVERYTHINGS
+#TODO: Comment EVERYTHING
 #TODO: Add a legend to the beat frequencies plot (top left corner)
 
 # Development option
@@ -40,13 +40,13 @@ MAX_NFFT = np.inf
 DEFAULT_BURST_SIZE = 1
 
 # Filter Params
-DEFAULT_FILTER_LOW = 0 #Hz
-DEFAULT_FILTER_HIGH = 10*1e6 #Hz
+DEFAULT_FILTER_LOW = 0  # Hz
+DEFAULT_FILTER_HIGH = 10 * 1e6  # Hz
 
 # Reconstruct Params
-DEFAULT_START_TIME = 0 #s
-DEFAULT_END_TIME = 10 #s
-DEFAULT_TIMESTEP = 1e-3 #s
+DEFAULT_START_TIME = 0  # s
+DEFAULT_END_TIME = 10  # s
+DEFAULT_TIMESTEP = 1e-3  # s
 
 # Plot Params
 DECIMALS_SWEEP_NUM = 6
@@ -54,22 +54,36 @@ DECIMALS_TIMESTAMP = 8
 DECIMALS_NPERSEG = 6
 DECIMALS_NOVERLAP = 6
 DECIMALS_NFFT = 6
+DECIMALS_EXCLUSIONS = 6
 
 # Profile Properties
-PROFILE_INVERSION_RESOLUTION = 150 #points
+PROFILE_INVERSION_RESOLUTION = 150  # points
 
 # Profile Colors
 HFS_COLOR = 'r'
 LFS_COLOR = 'b'
 
-#TODO: Segment the code
+
 class PlotWindow(QMainWindow):
-    request_signal = pyqtSignal()
+    """
+    Main application window for the ReflectoLab.
+
+    This class handles the user interface and data processing related to the reflectometry measurements.
+    It manages multiple plots, user settings, and computation in a multi-threaded environment.
+    """
     
+    request_signal = pyqtSignal()
+
     def __init__(self, parent=None, **kwargs):
+        """Initialize the PlotWindow and its components.
+
+        Args:
+            parent (QWidget, optional): The parent widget for the window.
+            **kwargs: Additional keyword arguments to be passed to the QMainWindow.
+        """
         super().__init__(parent, **kwargs)
 
-        #Initiate separate thread
+        # Initiate separate thread
         self._thread = QThread()
         self._threaded = Threaded()
         self._threaded.finished_signal.connect(self.finished_reconstruct)
@@ -82,11 +96,11 @@ class PlotWindow(QMainWindow):
         self._thread.start()
 
         # Define some useful attributes
-        self.supress_updates_ffts = False #Prevents repeated call of the update functions from the update_fft_params function
+        self.supress_updates_ffts = False  # Prevents repeated call of the update functions from the update_fft_params function
         self.shot = 0
         self.file_path = ''
         
-        #Store the spectrogram parameters
+        # Store the spectrogram parameters (HFS and LFS)
         self.spect_params = {
             'HFS': {
                 'K': {
@@ -153,10 +167,10 @@ class PlotWindow(QMainWindow):
         # Store the burst size (global)
         self.burst_size = DEFAULT_BURST_SIZE
 
-        #Store the beat frquencies of the 8 detectors
+        # Store the beat frequencies of the 8 detectors
         self.beat_frequencies = {
             'HFS': {
-                'K': [None, None, None], # [[f_probe], [beatf], [beat_time]]
+                'K': [None, None, None],  # [[f_probe], [beatf], [beat_time]]
                 'Ka': [None, None, None],
                 'Q': [None, None, None],
                 'V': [None, None, None]
@@ -166,10 +180,10 @@ class PlotWindow(QMainWindow):
                 'Ka': [None, None, None],
                 'Q': [None, None, None],
                 'V': [None, None, None]
-                }
             }
+        }
 
-        #Store the filters
+        # Store the filters
         self.filters = {
             'HFS': {
                 'K': [DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH],
@@ -185,7 +199,7 @@ class PlotWindow(QMainWindow):
             }
         }
 
-        #Store de background spectrograms
+        # Store the background spectrograms
         self.background_spectrograms = {
             'HFS': {
                 'K': None,
@@ -201,7 +215,8 @@ class PlotWindow(QMainWindow):
             }
         }
 
-        #---------------------------------------------------------------------------
+        # Store the exclusion filters
+        self.exclusion_filters = []
 
         # Set the application icon
         self.setWindowIcon(QtGui.QIcon('reflecto-lab.png'))
@@ -286,11 +301,12 @@ class PlotWindow(QMainWindow):
             {'name': 'Scale', 'type': 'checklist', 'limits': ['Normalized', 'Linear', 'Logarithmic'], 'exclusive': True, 'delay': 0},
             {'name': 'Subtract background', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Subtract dispersion', 'type': 'bool', 'value': False, 'enabled': False, 'delay': 0},
-            {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'}
-        ])
-        self.params_filter = Parameter.create(name='Filters (above dispersion)', type='group', visible=False, children=[
-            {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
-            {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0}
+            {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'},
+            {'name': 'Filters', 'title': 'Filters (above dispersion)', 'type': 'group', 'children': [
+                {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
+                {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0}
+            ]},
+            {'name': 'Exclude frequencies', 'type': 'group', 'addText': 'Add'}
         ])
         self.params_reconstruct = Parameter.create(name='Reconstruct Shot', type='group', visible=False, children=[
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
@@ -304,7 +320,6 @@ class PlotWindow(QMainWindow):
         self.param_tree.addParameters(self.params_detector)
         self.param_tree.addParameters(self.params_sweep)
         self.param_tree.addParameters(self.params_fft)
-        self.param_tree.addParameters(self.params_filter)
         self.param_tree.addParameters(self.params_reconstruct)
 
         # Connect the parameters to the functions-----------------------------------
@@ -326,7 +341,7 @@ class PlotWindow(QMainWindow):
         self.params_sweep.child('Sweep nº').sigValueChanged.connect(self.update_plot_params)
         self.params_sweep.child('Timestamp').sigValueChanged.connect(self.update_plot_params)
 
-        #Connect the fft params to update the fft
+        # Connect the fft params to update the fft
         self.params_fft.child('nperseg').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
@@ -335,20 +350,29 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('Subtract background').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('Subtract dispersion').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('Color Map').sigValueChanged.connect(self.draw_spectrogram)
+        self.params_fft.child('Filters').child('Low Filter').sigValueChanged.connect(self.update_fft_params)
+        self.params_fft.child('Filters').child('High Filter').sigValueChanged.connect(self.update_fft_params)
+        self.params_fft.child('Exclude frequencies').sigAddNew.connect(self.add_exclusion)
 
-        #Connect the filter params to update the fft
-        self.params_filter.child('Low Filter').sigValueChanged.connect(self.update_fft_params)
-        self.params_filter.child('High Filter').sigValueChanged.connect(self.update_fft_params)
-
-        #Connect the start and end times to eachother
+        # Connect the start and end times to each other
         self.params_reconstruct.child('Start Time').sigValueChanged.connect(self.update_reconstruct_params)
         self.params_reconstruct.child('End Time').sigValueChanged.connect(self.update_reconstruct_params)
 
-        #Connect the button to reconstruct shot
+        # Connect the button to reconstruct shot
         self.params_reconstruct.child('Reconstruct Shot').sigActivated.connect(self.request_reconstruct)
 
 
     def update_shot(self):
+        """Updates the shot and corresponding parameters when a file or shot number is changed.
+
+        This method handles the logic for loading the values of the selected shot from the file system
+        and ensuring that the necessary parameters are updated accordingly.
+        It also provides visibility to the relevant parameters in the UI based on the loaded shot.
+
+        Raises:
+            FileNotFoundError: If the specified path or shot cannot be found.
+            ValueError: If the shot number is invalid.
+        """
         sender = self.sender()
 
         # Name the path to the directory
@@ -386,10 +410,9 @@ class PlotWindow(QMainWindow):
         self.params_detector.setOpts(visible=True)
         self.params_sweep.setOpts(visible=True)
         self.params_fft.setOpts(visible=True)
-        self.params_filter.setOpts(visible=True)
         self.params_reconstruct.setOpts(visible=True)
 
-        # Set atributes before the plots-----------------------------------------------------
+        # Set attributes before the plots--------------------
 
         self.band = self.params_detector.child('Band').value()
         self.side = self.params_detector.child('Side').value()
@@ -401,13 +424,13 @@ class PlotWindow(QMainWindow):
         self.subtract_background = self.params_fft.child('Subtract background').value()
         self.subtract_dispersion = self.params_fft.child('Subtract dispersion').value()
 
-        # Calculate background spectrograms------------------------------------------------
+        # Calculate background spectrograms-------------------
 
         for side in self.spect_params:
             for band in self.spect_params[side]:
                 self.calculate_background(band, side)
         
-        # Plot everything-------------------------------------------------------------------
+        # Plot everything---------------------------------------
 
         self.update_plot()
         self.update_fft()
@@ -415,7 +438,7 @@ class PlotWindow(QMainWindow):
         self.draw_beatf()
         self.update_profile()
 
-        # Set limits to the parameters-----------------------------------------------------
+        # Set limits to the parameters--------------------------
 
         self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
 
@@ -427,13 +450,18 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('nperseg').setLimits((MIN_NPERSEG, len(self.data)))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), MAX_NFFT))
-        self.params_filter.child('Low Filter').setLimits((0, np.inf))
-        self.params_filter.child('High Filter').setLimits((abs(self.f_beat[0] - self.f_beat[1]), np.inf))
+        self.params_fft.child('Filters').child('Low Filter').setLimits((0, np.inf))
+        self.params_fft.child('Filters').child('High Filter').setLimits((abs(self.f_beat[0] - self.f_beat[1]), np.inf))
         self.params_reconstruct.child('Start Time').setLimits((0, len(self.time_stamps) * (self.time_stamps[1] - self.time_stamps[0])))
         self.params_reconstruct.child('End Time').setLimits((0, len(self.time_stamps) * (self.time_stamps[1] - self.time_stamps[0])))
 
 
     def update_plot(self):
+        """Retrieves and updates the signal data plotting in the Sweep graph.
+
+        This function extracts the data for the selected sweep and updates the corresponding plots.
+        The data is linearized and then plotted for both the real and imaginary parts, if applicable.
+        """
         start_time = time.time()
 
         if self.band == 'V':
@@ -441,13 +469,16 @@ class PlotWindow(QMainWindow):
         else:
             self.signal_type = 'real'
             
+        # Retrieve signal based on selected parameters
         self.data = rpspy.get_band_signal(self.shot, self.file_path, self.band, self.side, self.signal_type, self.sweep)[0]
         self.data -= 2**11 if self.signal_type == 'real' else (2**11 + 1j * 2**11)
 
+        # Linearize the x-axis data
         if SANDBOX:
             self.x_data = func_aux.cached_get_linearization(self.shot, 24, self.band, shotfile_dir=self.file_path)
         else:
             self.x_data = func_aux.cached_get_auto_linearization_from_shares(self.shot, self.band)
+            
         self.x_data, self.data = rpspy.linearize(self.x_data, self.data)
 
         self.draw_plot()
@@ -457,15 +488,22 @@ class PlotWindow(QMainWindow):
 
 
     def draw_plot(self):
+        """Plots the real and imaginary parts of the signal data in the Sweep graph.
+
+        This function clears the current plot and redraws the real and (if applicable) imaginary parts
+        of the signal data, based on the processed x_data and y_data.
+        """
         y_real = np.real(self.data)
         y_complex = np.imag(self.data)
 
+        # Clear the plot and draw the new data
         self.plot_sweep.clear()
-        self.plot_sweep.plot(self.x_data, y_real, pen=pg.mkPen(color='r', width=2)) #Plot real part
+        self.plot_sweep.plot(self.x_data, y_real, pen=pg.mkPen(color='r', width=2))  # Plot real part
 
         if not(np.array_equiv(y_complex, 0)):
-            self.plot_sweep.plot(self.x_data, y_complex, pen=pg.mkPen(color='b', width=2)) #Plot complex part
+            self.plot_sweep.plot(self.x_data, y_complex, pen=pg.mkPen(color='b', width=2))  # Plot complex part
         
+        # Set limits for the plot
         self.plot_sweep.setLimits(xMin=self.x_data[0],
                                 xMax=self.x_data[-1],
                                 yMin=-2**11,
@@ -478,6 +516,11 @@ class PlotWindow(QMainWindow):
 
 
     def update_fft(self):
+        """Calculates and updates the spectrogram based on the current settings.
+
+        Retrieves the necessary parameters to compute the spectrogram and calls the 
+        appropriate methods to process the data.
+        """
         start_time = time.time()
 
         self.f, self.fs, self.f_beat, self.t, self.f_probe, self.unfiltered_Sxx = self.calculate_spectrogram(self.band, self.side, self.nperseg, self.noverlap, self.nfft, self.sweep, self.burst_size, self.subtract_dispersion)
@@ -489,11 +532,17 @@ class PlotWindow(QMainWindow):
 
 
     def draw_spectrogram(self):
+        """Draws the spectrogram in the Spectrogram graph.
+
+        This function visualizes the calculated spectrogram with appropriate scaling and transformations.
+        It can also handle background subtraction based on the user's settings.
+        """
         if self.subtract_background:
             self.Sxx = self.background_subtract(self.unfiltered_Sxx, self.band, self.side)
         else:
             self.Sxx = np.array(self.unfiltered_Sxx)
 
+        # Scale the spectrogram based on user preference
         if self.params_fft.child('Scale').value() == 'Normalized':
             Sxx_copy = np.array(self.Sxx)
             max_vals = np.max(Sxx_copy, axis=0)
@@ -506,20 +555,21 @@ class PlotWindow(QMainWindow):
         elif self.params_fft.child('Scale').value() == 'Logarithmic':
             Sxx_copy = np.log(np.array(self.Sxx))
         
-        # Transformed display of ImageItem
-        transform = QtGui.QTransform() # prepare ImageItem transformation
-        alpha_x = (self.nperseg-self.noverlap)*abs(self.f[1]-self.f[0])
-        transform.translate(self.noverlap/2*abs(self.f[1]-self.f[0]) + self.f[0], -self.fs/2 if self.band == 'V' else 0)
-        transform.scale(alpha_x, abs(self.f_beat[1]-self.f_beat[0])) # scale horizontal and vertical axes
+        # Prepare ImageItem transformation
+        transform = QtGui.QTransform() 
+        alpha_x = (self.nperseg - self.noverlap) * abs(self.f[1] - self.f[0])
+        transform.translate(self.noverlap / 2 * abs(self.f[1] - self.f[0]) + self.f[0], -self.fs / 2 if self.band == 'V' else 0)
+        transform.scale(alpha_x, abs(self.f_beat[1] - self.f_beat[0]))  # Scale horizontal and vertical axes
 
-        i1 = pg.ImageItem(image=Sxx_copy.T) # Note: `Sxx` needs to be transposed to fit the display format
-        i1.setTransform(transform) # assign transform
+        # Create and add ImageItem to the plot
+        i1 = pg.ImageItem(image=Sxx_copy.T)  # Sxx needs to be transposed to fit the display format
+        i1.setTransform(transform)  # Assign transform
 
-        # Check if Sxx has nan values
+        # Check if Sxx has NaN values
         if np.isnan(Sxx_copy).any():
             print("Warning: Sxx has NaN values")
         
-        self.plot_spect.clear() # Clear previous plot
+        self.plot_spect.clear()  # Clear previous plot
         self.plot_spect.addItem(i1)
         
         # Set up color bar
@@ -533,52 +583,69 @@ class PlotWindow(QMainWindow):
 
         # Configure plot appearance
         self.plot_spect.setMouseEnabled(x=True, y=True)
-        self.plot_spect.setLimits(xMin=self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2,
-                                xMax=self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2,
-                                yMin=self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2,
-                                yMax=self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2)
-        
-        """ self.plot_spect.setRange(xRange=(self.f_probe[0]-(self.f_probe[1]-self.f_probe[0])/2, self.f_probe[-1]+(self.f_probe[1]-self.f_probe[0])/2),
-                               yRange=(self.f_beat[0]-(self.f_beat[1]-self.f_beat[0])/2, self.f_beat[-1]+(self.f_beat[1]-self.f_beat[0])/2)) """
+        self.plot_spect.setLimits(xMin=self.f_probe[0] - (self.f_probe[1] - self.f_probe[0]) / 2,
+                                xMax=self.f_probe[-1] + (self.f_probe[1] - self.f_probe[0]) / 2,
+                                yMin=self.f_beat[0] - (self.f_beat[1] - self.f_beat[0]) / 2,
+                                yMax=self.f_beat[-1] + (self.f_beat[1] - self.f_beat[0]) / 2)
         
         self.plot_spect.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_spect.setLabel('left', 'Beat Frequency', units='Hz')
 
         self.draw_dispersion_line()
-
         self.draw_low_filter()
-
         self.draw_high_filter()
-
         self.draw_beatf_spectrogram()
 
-        
+
     def draw_dispersion_line(self):
+        """Draws the dispersion line on the spectrogram plot.
+
+        This function computes the dispersion based on the selected parameters
+        and visualizes it on the spectrogram.
+        """
         self.y_dis = self.calculate_dispersion(self.band, self.side, self.f_probe, self.t, self.subtract_dispersion)
         self.plot_spect.plot(self.f_probe, self.y_dis, pen=pg.mkPen(color='g', width=2))
 
 
     def draw_low_filter(self):
+        """Draws the low cut-off filter line on the spectrogram plot.
+
+        This function calculates and displays the low filter line based on the current filter settings.
+        """
         filter_low = self.filters[self.side][self.band][0]
         y_low = self.y_dis + filter_low
         self.plot_spect.plot(self.f_probe, y_low, pen=pg.mkPen(color='b', width=2))
 
 
     def draw_high_filter(self):
+        """Draws the high cut-off filter line on the spectrogram plot.
+
+        This function calculates and displays the high filter line based on the current filter settings.
+        """
         filter_high = self.filters[self.side][self.band][1]
         y_high = self.y_dis + filter_high
         self.plot_spect.plot(self.f_probe, y_high, pen=pg.mkPen(color='w', width=2))
 
 
     def draw_beatf_spectrogram(self):
+        """Draws the beat frequencies on the spectrogram plot.
+
+        This method computes the beat frequencies based on the spectrogram data and visualizes them accordingly.
+        """
         Sxx_copy = np.array(self.Sxx)
         self.y_beatf = self.calculate_beatf(self.band, self.side, Sxx_copy, self.y_dis, self.f_beat, self.fs)
         self.plot_spect.plot(self.f_probe, self.y_beatf, pen=pg.mkPen(color='r', width=2))
 
 
     def update_one_beatf(self, band, side):
+        """Updates the beat frequency data for a given band and side.
+
+        Args:
+            band (str): The band (e.g., K, Ka, Q, V) for which to update the beat frequency data.
+            side (str): The side (HFS or LFS) for which to update the beat frequency data.
+        """
         if side == self.side and band == self.band:
-            self.df_dt = (self.f[-1] - self.f[0])/((len(self.f) - 1)*(1/self.fs))
+            self.df_dt = (self.f[-1] - self.f[0]) / ((len(self.f) - 1) * (1/self.fs))
             
             y_beat_time = (self.y_beatf - self.y_dis) / self.df_dt
 
@@ -601,7 +668,7 @@ class PlotWindow(QMainWindow):
 
             y_beatf = self.calculate_beatf(band, side, Sxx, y_dis, f_beat, fs)
 
-            df_dt = (f[-1] - f[0])/((len(f) - 1)*(1/fs))
+            df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1/fs))
             
             y_beat_time = (y_beatf - y_dis) / df_dt
 
@@ -609,6 +676,11 @@ class PlotWindow(QMainWindow):
 
 
     def update_all_beatf(self):
+        """Updates the beat frequencies for all detectors.
+
+        This method iterates over both HFS and LFS sides and all bands to calculate their beat frequency data
+        and store it within the `beat_frequencies` attribute.
+        """
         start_time = time.time()
 
         for side in self.spect_params:
@@ -620,6 +692,11 @@ class PlotWindow(QMainWindow):
 
 
     def draw_beatf(self):
+        """Draws the beat frequencies for all detectors on the Beat Frequencies plot.
+
+        This method constructs arrays of beat frequencies for HFS and LFS sides,
+        ensuring proper handling of NaN values and plotting them accordingly.
+        """
         self.plot_beatf.clear()
 
         self.all_delay_HFS_f_probe = np.concatenate((
@@ -628,9 +705,7 @@ class PlotWindow(QMainWindow):
             self.beat_frequencies['HFS']['Ka'][0],
             self.beat_frequencies['HFS']['Q'][0],
             self.beat_frequencies['HFS']['V'][0]
-        )
-        )
-
+        ))
 
         self.all_delay_HFS_beat_time = np.concatenate((
             [0],
@@ -638,8 +713,7 @@ class PlotWindow(QMainWindow):
             self.beat_frequencies['HFS']['Ka'][2],
             self.beat_frequencies['HFS']['Q'][2],
             self.beat_frequencies['HFS']['V'][2]
-        )
-        )
+        ))
 
         self.all_delay_LFS_f_probe = np.concatenate((
             [0],
@@ -647,8 +721,7 @@ class PlotWindow(QMainWindow):
             self.beat_frequencies['LFS']['Ka'][0],
             self.beat_frequencies['LFS']['Q'][0],
             self.beat_frequencies['LFS']['V'][0]
-        )
-        )
+        ))
 
         self.all_delay_LFS_beat_time = np.concatenate(
             (
@@ -657,9 +730,8 @@ class PlotWindow(QMainWindow):
             self.beat_frequencies['LFS']['Ka'][2],
             self.beat_frequencies['LFS']['Q'][2],
             self.beat_frequencies['LFS']['V'][2]
-        )
-        )
-        
+        ))
+
         # Handle NaNs in these arrays
         # HFS
         nan_mask = np.isnan(self.all_delay_HFS_beat_time)
@@ -678,7 +750,7 @@ class PlotWindow(QMainWindow):
             for band in self.beat_frequencies[side]:
                 f_probe = self.beat_frequencies[side][band][0]
                 beat_time = self.beat_frequencies[side][band][2]
-                #beat_freq = self.beat_frequencies[side][band][1]
+                # beat_freq = self.beat_frequencies[side][band][1]
                 self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
@@ -686,6 +758,11 @@ class PlotWindow(QMainWindow):
 
 
     def update_profile(self):
+        """Updates and plots the electron density profile based on beat time data.
+
+        This method calculates the group delay for HFS and LFS, performs profile inversion,
+        and draws the resulting electron density on the profile plot.
+        """
         start_time = time.time()
 
         group_delay_HFS_x = np.linspace(self.all_delay_HFS_f_probe[0], self.all_delay_HFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
@@ -701,34 +778,46 @@ class PlotWindow(QMainWindow):
         ne_LFS = rpspy.f_to_ne(group_delay_LFS_x)
 
         self.plot_profile.clear()
-        self.plot_profile.plot(r_HFS, ne_HFS*1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
-        self.plot_profile.plot(r_LFS, ne_LFS*1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
-        # self.plot_profile.setLimits(xMin=min(x), 
-        #                             xMax=max(x), 
-        #                             maxXRange=max(x)-min(x), 
-        #                             yMin=min(self.density*1e-19),
-        #                             yMax=max(self.density*1e-19),
-        #                             maxYRange=max(self.density*1e-19)-min(self.density*1e-19))
+        self.plot_profile.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
+        self.plot_profile.plot(r_LFS, ne_LFS * 1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
+        
         self.plot_profile.setLabel('bottom', 'radius', units='m')
         self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
 
         print("profile")
         print("--- %s seconds ---" % (time.time() - start_time))
-    
-# Calculate----------------------------------------------------------------------------------------------------------------------
-    
+
+# Calculate operations----------------------------------------------------------------------------------------------------------------------
+
     def calculate_spectrogram(self, band, side, nperseg, noverlap, nfft, sweep, burst_size, subtract=None):
+        """Calculates the spectrogram for a given band and side based on input parameters.
+
+        Args:
+            band (str): The band to analyze (K, Ka, Q, V).
+            side (str): The side to analyze (HFS, LFS).
+            nperseg (int): The length of each segment for the Fourier transform.
+            noverlap (int): The number of points to overlap between segments.
+            nfft (int): The number of points in the FFT.
+            sweep (int): The contiguous bursts to process.
+            burst_size (int): The size of the burst to analyze.
+            subtract (bool, optional): Whether to subtract the dispersion. Defaults to None.
+
+        Returns:
+            tuple: A tuple containing frequency, sampling frequency, beat frequency, time, probing frequency, and spectrogram Sxx.
+        """
         if band == 'V':
             signal_type = 'complex'
         else:
             signal_type = 'real'
 
+        # Retrieving burst signal based on the selected parameters
         burst = rpspy.get_band_signal(self.shot, self.file_path, band, side, signal_type, sweep - burst_size // 2, burst_size)
-        # f = func_aux.cached_get_linearization(self.shot, 24, band, shotfile_dir=self.file_path)
+        
         if SANDBOX:
             f = func_aux.cached_get_linearization(self.shot, 24, band, shotfile_dir=self.file_path)
         else:
             f = func_aux.cached_get_auto_linearization_from_shares(self.shot, band)
+        
         f, linearized_burst = rpspy.linearize(f, burst)
 
         fs = rpspy.get_sampling_frequency(self.shot, self.file_path)
@@ -739,8 +828,8 @@ class PlotWindow(QMainWindow):
             linearized_burst -= 2**11
 
         if subtract == True:
-            df_dt = (f[-1] - f[0])/((len(f) - 1)*(1/fs))
-            correction = rpspy.get_dispersion_phase(self.shot, band, side, f[0], df_dt, np.arange(len(f))/fs)
+            df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1/fs))
+            correction = rpspy.get_dispersion_phase(self.shot, band, side, f[0], df_dt, np.arange(len(f)) / fs)
             corrected_burst = linearized_burst * correction  # Multiply by dispersion phase
         else:
             corrected_burst = linearized_burst
@@ -753,9 +842,9 @@ class PlotWindow(QMainWindow):
             nfft=nfft,
             return_onesided=False if corrected_burst.dtype == complex else True,
             detrend=False
-            )
+        )
 
-        f_probe = np.interp(t, np.arange(len(f))/fs, f)
+        f_probe = np.interp(t, np.arange(len(f)) / fs, f)
 
         if band == 'V':
             f_beat = fftshift(f_beat)
@@ -768,16 +857,41 @@ class PlotWindow(QMainWindow):
 
 
     def calculate_dispersion(self, band, side, f_probe, t, subtract):
+        """Calculates dispersion for the selected band and side.
+
+        Args:
+            band (str): The band to analyze (K, Ka, Q, V).
+            side (str): The side to analyze (HFS, LFS).
+            f_probe (array_like): Probing frequencies array.
+            t (array_like): Time array.
+            subtract (bool): Whether to subtract the dispersion.
+
+        Returns:
+            array_like: Calculated dispersion values.
+        """
         if band == 'V' and subtract == True:
             y_dis = np.zeros(len(f_probe))
         else:
             k = (f_probe[-1] - f_probe[0]) / (t[-1] - t[0])
-            y_dis = k * rpspy.aug_tgcorr2(band, side, f_probe*1e-9, self.shot)
+            y_dis = k * rpspy.aug_tgcorr2(band, side, f_probe * 1e-9, self.shot)
 
         return y_dis
 
 
     def calculate_beatf(self, band, side, Sxx, y_dis, f_beat, fs):
+        """Calculates the beat frequency based on the spectrogram data.
+
+        Args:
+            band (str): The band to analyze (K, Ka, Q, V).
+            side (str): The side to analyze (HFS, LFS).
+            Sxx (array_like): Spectrogram data.
+            y_dis (array_like): Dispersion values.
+            f_beat (array_like): Beat frequencies.
+            fs (float): Sampling frequency.
+
+        Returns:
+            array_like: Calculated beat frequencies.
+        """
         filter_low = self.filters[side][band][0]
         filter_high = self.filters[side][band][1]
 
@@ -787,15 +901,21 @@ class PlotWindow(QMainWindow):
         
         # Generate the line through the max of the graph
         y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)  # Y coordinates
-        y_max *= abs(f_beat[1]-f_beat[0])
+        y_max *= abs(f_beat[1] - f_beat[0])
 
         if band == 'V':
-            y_max += -fs/2
+            y_max += -fs / 2
         
         return y_max
     
 
     def calculate_background(self, band, side):
+        """Calculates and stores the background spectrogram for a given band and side.
+
+        Args:
+            band (str): The band to analyze (K, Ka, Q, V).
+            side (str): The side to analyze (HFS, LFS).
+        """
         nperseg = self.spect_params[side][band]['nperseg']
         noverlap = self.spect_params[side][band]['noverlap']
         nfft = self.spect_params[side][band]['nfft']
@@ -807,6 +927,16 @@ class PlotWindow(QMainWindow):
 
 
     def background_subtract(self, Sxx, band, side):
+        """Subtracts the background from the spectrogram data.
+
+        Args:
+            Sxx (array_like): The spectrogram data to which the background will be subtracted.
+            band (str): The band type for filtering.
+            side (str): The side type for filtering.
+
+        Returns:
+            array_like: The background-subtracted spectrogram data.
+        """
         spectrogram_subtracted = np.clip(
             Sxx - self.background_spectrograms[side][band],
             a_min=np.min(Sxx),
@@ -818,6 +948,10 @@ class PlotWindow(QMainWindow):
 # Parameters ---------------------------------------------------------------------------------------------------------------------
 
     def save_config(self):
+        """Saves the current configuration settings to a JSON file.
+
+        This method exports the current spectrogram parameters, filters, and burst size to a specified file path.
+        """
         path = self.params_config.child('Save').value()
 
         data = {'parameters': self.spect_params,
@@ -829,12 +963,17 @@ class PlotWindow(QMainWindow):
         
         print(f"Data saved to {path}")
 
-        # Workaround to force sigValueChanged and overwright existing file
+        # Workaround to force sigValueChanged and overwrite the existing file
         self.params_config.child('Save').setValue(path + ' (saved)', blockSignal=self.save_config)
         self.params_config.child('Load').setValue('', blockSignal=self.load_config)
 
 
     def load_config(self):
+        """Loads configuration settings from a JSON file.
+
+        This method imports the spectrogram parameters, filters, and burst size from a specified file path,
+        updating the interface accordingly.
+        """
         path = self.params_config.child('Load').value()
         
         with open(path, 'r') as file:
@@ -858,8 +997,13 @@ class PlotWindow(QMainWindow):
 
 
     def set_saved_params(self):
-        self.params_filter.child('Low Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][0], blockSignal=self.update_fft_params)
-        self.params_filter.child('High Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][1], blockSignal=self.update_fft_params)
+        """Sets the parameter values in the UI based on the saved configuration.
+
+        This method updates the parameter tree's UI with the saved spectrogram settings,
+        ensuring that the parameters reflected in the interface match the loaded configuration.
+        """
+        self.params_fft.child('Filters').child('Low Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][0], blockSignal=self.update_fft_params)
+        self.params_fft.child('Filters').child('High Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][1], blockSignal=self.update_fft_params)
         self.params_fft.child('nperseg').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg'], blockSignal=self.update_fft_params)
         self.nperseg = self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg']
         self.params_fft.child('noverlap').sigValueChanged.disconnect(self.update_fft_params)
@@ -879,6 +1023,11 @@ class PlotWindow(QMainWindow):
 
 
     def update_detector_params(self):
+        """Updates the parameters related to the selected detector band and side.
+
+        This method synchronizes the settings between the UI and the current parameters
+        when the band and side are changed in the application.
+        """
         sender = self.sender()
 
         self.set_saved_params()
@@ -897,6 +1046,11 @@ class PlotWindow(QMainWindow):
 
 
     def update_plot_params(self):
+        """Updates the plot parameters based on user input from the sweep settings.
+
+        This function manages the synchronization between the sweep index, sweep number,
+        and timestamp as they are changed by the user and updates the relevant plots accordingly.
+        """
         sender = self.sender()
 
         if sender == self.params_sweep.child('Sweep'):
@@ -933,6 +1087,11 @@ class PlotWindow(QMainWindow):
 
 
     def update_fft_params(self):
+        """Updates the parameters related to the FFT based on user input.
+
+        This function applies the changes to the FFT settings such as segment lengths, overlaps, 
+        and burst sizes while ensuring to synchronize the UI and computed values in real-time.
+        """
         sender = self.sender()
 
         if sender == self.params_fft.child('nperseg'):
@@ -965,6 +1124,7 @@ class PlotWindow(QMainWindow):
             else:
                 self.params_fft.child('burst size (odd)').setValue(value, blockSignal=self.update_fft_params)
                 self.burst_size = value
+            
             lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
             upper_limit = int(len(self.time_stamps) - self.params_fft.child('burst size (odd)').value() // 2)
             self.supress_updates_ffts = True
@@ -981,40 +1141,75 @@ class PlotWindow(QMainWindow):
             self.spect_params[self.side][self.band]['subtract dispersion'] = self.params_fft.child('Subtract dispersion').value()
             self.subtract_dispersion = self.params_fft.child('Subtract dispersion').value()
 
-        elif sender == self.params_filter.child('Low Filter'):
-            self.filters[self.side][self.band][0] = self.params_filter.child('Low Filter').value()
+        elif sender == self.params_fft.child('Filters').child('Low Filter'):
+            self.filters[self.side][self.band][0] = self.params_fft.child('Filters').child('Low Filter').value()
             if self.filters[self.side][self.band][0] + abs(self.f_beat[1] - self.f_beat[0]) >= self.filters[self.side][self.band][1]:
                 self.filters[self.side][self.band][1] = self.filters[self.side][self.band][0] + abs(self.f_beat[1] - self.f_beat[0])
-                self.params_filter.child('High Filter').setValue(self.filters[self.side][self.band][1], blockSignal=self.update_fft_params)
+                self.params_fft.child('Filters').child('High Filter').setValue(self.filters[self.side][self.band][1], blockSignal=self.update_fft_params)
         
-        elif sender == self.params_filter.child('High Filter'):
-            self.filters[self.side][self.band][1] = self.params_filter.child('High Filter').value()
+        elif sender == self.params_fft.child('Filters').child('High Filter'):
+            self.filters[self.side][self.band][1] = self.params_fft.child('Filters').child('High Filter').value()
             if self.filters[self.side][self.band][1] - abs(self.f_beat[1] - self.f_beat[0]) <= self.filters[self.side][self.band][0]:
                 self.filters[self.side][self.band][0] = self.filters[self.side][self.band][1] - abs(self.f_beat[1] - self.f_beat[0])
-                self.params_filter.child('Low Filter').setValue(self.filters[self.side][self.band][0], blockSignal=self.update_fft_params)
+                self.params_fft.child('Filters').child('Low Filter').setValue(self.filters[self.side][self.band][0], blockSignal=self.update_fft_params)
 
+        # Trigger updates after changes to FFT parameters
         if not self.supress_updates_ffts:
-            if sender == self.params_filter.child('Low Filter') or sender == self.params_filter.child('High Filter') or sender == self.params_fft.child('Subtract background'):
+            if sender == self.params_fft.child('Filters').child('Low Filter') or sender == self.params_fft.child('Filters').child('High Filter') or sender == self.params_fft.child('Subtract background'):
                 self.draw_spectrogram()
-            else:
-                self.calculate_background(self.band, self.side)
-                self.update_fft()
+                self.update_one_beatf(self.band, self.side)
 
-            if sender == self.params_fft.child('burst size (odd)'):
+            elif sender == self.params_fft.child('burst size (odd)'):
                 for side in self.spect_params:
                     for band in self.spect_params[side]:
                         if not (side == self.side and band == self.band):
                             self.calculate_background(band, side)
-
+                self.update_fft()
                 self.update_all_beatf()
+                
             else:
+                self.calculate_background(self.band, self.side)
+                self.update_fft()
                 self.update_one_beatf(self.band, self.side)
             
             self.draw_beatf()
             self.update_profile()
-    
+
+
+    def add_exclusion(self):
+        """Adds a new exclusion frequency range to the list of excluded frequencies (max. 10 exclusions).
+
+        This method adds a new parameter group to the exclusion parameter, allowing the user to specify a frequency range to exclude.
+        """
+        pos = len(self.params_fft.child('Exclude frequencies').children())
+        if pos < 10:
+            self.params_fft.child('Exclude frequencies').addChild({'name': f'{pos+1} º', 'type': 'group', 'children': [
+                {'name': 'from', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                {'name': 'to', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                {'name': 'Remove', 'type': 'action'},
+            ]})
+            self.params_fft.child('Exclude frequencies').child(f'{pos+1} º').child('Remove').sigActivated.connect(self.remove_exclusion)
+
+
+    def remove_exclusion(self):
+        """Removes an exclusion frequency range from the list of excluded frequencies.
+
+        This method removes the selected parameter group from the exclusion parameter and updates the numbering of the remaining exclusions.
+        """
+        sender = self.sender()
+        parent = sender.parent()
+        num_of_parent = int(parent.name().split(' ')[0])
+        self.params_fft.child('Exclude frequencies').removeChild(parent)
+        for i in range(num_of_parent, len(self.params_fft.child('Exclude frequencies').children()) + 1):
+            self.params_fft.child('Exclude frequencies').child(f'{i+1} º').setName(f'{i} º')
+
 
     def update_reconstruct_params(self):
+        """Updates reconstruction parameters based on input settings.
+
+        This function validates the start and end times for the shot reconstruction,
+        ensuring that they are within appropriate limits relative to each other.
+        """
         sender = self.sender()
 
         if sender == self.params_reconstruct.child('Start Time'):
@@ -1028,6 +1223,10 @@ class PlotWindow(QMainWindow):
 
     @pyqtSlot()
     def request_reconstruct(self):
+        """Requests the reconstruction of the shot in a separate thread.
+
+        This method emits a signal to start the reconstruction process and disables the UI elements related to this operation until it is complete.
+        """
         self.request_signal.emit()
         self.params_reconstruct.child('Start Time').setOpts(enabled=False)
         self.params_reconstruct.child('End Time').setOpts(enabled=False)
@@ -1037,6 +1236,10 @@ class PlotWindow(QMainWindow):
 
     @pyqtSlot()
     def finished_reconstruct(self):
+        """Handles UI updates upon completion of the reconstruction process.
+
+        This method re-enables the UI elements that were disabled when the reconstruction was initiated.
+        """
         self.params_reconstruct.child('Start Time').setOpts(enabled=True)
         self.params_reconstruct.child('End Time').setOpts(enabled=True)
         self.params_reconstruct.child('Time Step').setOpts(enabled=True)
@@ -1045,40 +1248,56 @@ class PlotWindow(QMainWindow):
 
 
 class Threaded(QObject):
+    """Handles the reconstruction process in a separate thread for better responsiveness.
+
+    This class is intended to manage the reconstruction without blocking the main GUI thread,
+    ensuring smooth user experience during long processing tasks.
+    """
+    
     finished_signal = pyqtSignal()
 
 
     def __init__(self, parent=None, **kwargs):
+        """Initializes the Threaded class.
+
+        Args:
+            parent (QObject, optional): Parent object, default is None.
+            **kwargs: Additional keyword arguments.
+        """
         # intentionally not setting the parent
         super().__init__(parent=None, **kwargs)
 
 
     @pyqtSlot()
     def reconstruct(self):
+        """Performs the full profile reconstruction for the specified shot.
+
+        This method gathers the necessary parameters and calls the reconstruction method from the `rpspy`
+        library, emitting a signal upon completion to notify the main window.
+        """
         rpspy.full_profile_reconstruction(
             shot=main_window.shot, 
-            destination_dir = 'reconstruction_shots', 
+            destination_dir='reconstruction_shots', 
             shotfile_dir=main_window.file_path, 
             linearization_shotfile_dir=main_window.file_path, 
             sweep_linearization=None, 
             shot_linearization=main_window.shot,
             spectrogram_options={
-            'K': {'nperseg': main_window.nperseg, 'noverlap':main_window.noverlap, 'nfft': main_window.nfft},
-            'Ka': {'nperseg': main_window.nperseg, 'noverlap':main_window.noverlap, 'nfft': main_window.nfft},
-            'Q': {'nperseg': main_window.nperseg, 'noverlap':main_window.noverlap, 'nfft': main_window.nfft},
-            'V': {'nperseg': main_window.nperseg, 'noverlap':main_window.noverlap, 'nfft': main_window.nfft},
+                'K': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
+                'Ka': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
+                'Q': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
+                'V': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
             }, 
             filters=main_window.filters,
             subtract_on_bands=None,
-            start_time = main_window.params_reconstruct.child('Start Time').value(), 
-            end_time = main_window.params_reconstruct.child('End Time').value(), 
-            time_step = main_window.params_reconstruct.child('Time Step').value(),
-            burst = int(main_window.params_fft.child('burst size (odd)').value()), 
-            write_dump = True,
-            return_profiles = False,
-            )
+            start_time=main_window.params_reconstruct.child('Start Time').value(), 
+            end_time=main_window.params_reconstruct.child('End Time').value(), 
+            time_step=main_window.params_reconstruct.child('Time Step').value(),
+            burst=int(main_window.params_fft.child('burst size (odd)').value()), 
+            write_dump=True,
+            return_profiles=False,
+        )
         self.finished_signal.emit()
-
 
 
 if __name__ == '__main__':
