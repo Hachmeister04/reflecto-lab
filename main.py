@@ -97,6 +97,7 @@ class PlotWindow(QMainWindow):
 
         # Define some useful attributes
         self.supress_updates_ffts = False  # Prevents repeated call of the update functions from the update_fft_params function
+        self.supress_exclusions = False # Prevents unnecessary additions to the exclusion filters when changing the band or side
         self.shot = 0
         self.file_path = ''
         
@@ -216,7 +217,20 @@ class PlotWindow(QMainWindow):
         }
 
         # Store the exclusion filters
-        self.exclusion_filters = []
+        self.exclusion_filters = {
+            'HFS': {
+                'K': [], # [[low, high], [low, high], ...]
+                'Ka': [],
+                'Q': [],
+                'V': []
+            },
+            'LFS': {
+                'K': [],
+                'Ka': [],
+                'Q': [],
+                'V': []
+            }
+        }
 
         # Set the application icon
         self.setWindowIcon(QtGui.QIcon('reflecto-lab.png'))
@@ -435,7 +449,7 @@ class PlotWindow(QMainWindow):
         self.update_plot()
         self.update_fft()
         self.update_all_beatf()
-        self.draw_beatf()
+        self.draw_beatfs()
         self.update_profile()
 
         # Set limits to the parameters--------------------------
@@ -447,7 +461,7 @@ class PlotWindow(QMainWindow):
         self.params_sweep.child('Sweep nº').setLimits((1, len(self.time_stamps)))
         self.params_sweep.child('Timestamp').setLimits((self.time_stamps[0], self.time_stamps[-1]))
         self.params_sweep.child('Timestamp').setOpts(step=self.time_stamps[1])
-        self.params_fft.child('nperseg').setLimits((MIN_NPERSEG, len(self.data)))
+        self.params_fft.child('nperseg').setLimits((MIN_NPERSEG, len(self.data) // 2))
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), MAX_NFFT))
         self.params_fft.child('Filters').child('Low Filter').setLimits((0, np.inf))
@@ -636,6 +650,15 @@ class PlotWindow(QMainWindow):
         self.y_beatf = self.calculate_beatf(self.band, self.side, Sxx_copy, self.y_dis, self.f_beat, self.fs)
         self.plot_spect.plot(self.f_probe, self.y_beatf, pen=pg.mkPen(color='r', width=2))
 
+        # Draw the exclusion filters
+        for exclusion in self.exclusion_filters[self.side][self.band]:
+            x_min = exclusion[0]
+            x_max = exclusion[1]
+            mask = (self.f_probe >= x_min) & (self.f_probe <= x_max)
+
+            self.plot_spect.plot(self.f_probe[mask], self.y_beatf[mask], pen=pg.mkPen(color='w', width=2))
+
+
 
     def update_one_beatf(self, band, side):
         """Updates the beat frequency data for a given band and side.
@@ -691,7 +714,7 @@ class PlotWindow(QMainWindow):
         print("--- %s seconds ---" % (time.time() - start_time))
 
 
-    def draw_beatf(self):
+    def draw_beatfs(self):
         """Draws the beat frequencies for all detectors on the Beat Frequencies plot.
 
         This method constructs arrays of beat frequencies for HFS and LFS sides,
@@ -752,6 +775,16 @@ class PlotWindow(QMainWindow):
                 beat_time = self.beat_frequencies[side][band][2]
                 # beat_freq = self.beat_frequencies[side][band][1]
                 self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
+        
+        # Draw the exclusion filters
+        for side in self.exclusion_filters:
+            for band in self.exclusion_filters[side]:
+                for exclusion in self.exclusion_filters[side][band]:
+                    x_min = exclusion[0]
+                    x_max = exclusion[1]
+                    mask = (self.beat_frequencies[side][band][0] >= x_min) & (self.beat_frequencies[side][band][0] <= x_max)
+
+                    self.plot_beatf.plot(self.beat_frequencies[side][band][0][mask], self.beat_frequencies[side][band][2][mask], pen=pg.mkPen(color='w', width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_beatf.setLabel('left', 'Time Delay', units='s')
@@ -764,6 +797,23 @@ class PlotWindow(QMainWindow):
         and draws the resulting electron density on the profile plot.
         """
         start_time = time.time()
+
+        # Remove the exclusion filters from the beat time data
+        for side in self.exclusion_filters:
+            for band in self.exclusion_filters[side]:
+                for exclusion in self.exclusion_filters[side][band]:
+                    x_min = exclusion[0]
+                    x_max = exclusion[1]
+
+                    if side == 'HFS':
+                        mask = (self.all_delay_HFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_HFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
+                        self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~mask]
+                        self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~mask]
+                    
+                    elif side == 'LFS':
+                        mask = (self.all_delay_LFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_LFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
+                        self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~mask]
+                        self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~mask]
 
         group_delay_HFS_x = np.linspace(self.all_delay_HFS_f_probe[0], self.all_delay_HFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
         group_delay_HFS_y = np.interp(group_delay_HFS_x, self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time)
@@ -956,7 +1006,8 @@ class PlotWindow(QMainWindow):
 
         data = {'parameters': self.spect_params,
                 'filters': self.filters,
-                'burst_size': self.burst_size}
+                'burst_size': self.burst_size,
+                'exclusion_filters': self.exclusion_filters}
         
         with open(path, 'w') as file:
             json.dump(data, file, indent=4)
@@ -984,11 +1035,12 @@ class PlotWindow(QMainWindow):
             self.spect_params = data.get("parameters", {})
             self.filters = data.get("filters", {})
             self.burst_size = data.get("burst_size", 0.0)
+            self.exclusion_filters = data.get("exclusion_filters", {})
 
         self.set_saved_params()
 
         # Force change signal to handle sweep number and plot everything
-        self.params_fft.child('burst size (odd)').setValue(0, blockSignal=self.update_fft_params)
+        self.params_fft.child('burst size (odd)').setValue(2, blockSignal=self.update_fft_params)
         self.params_fft.child('burst size (odd)').setValue(self.burst_size)
 
         # Workaround to force sigValueChanged and load from overwritten file
@@ -1002,24 +1054,36 @@ class PlotWindow(QMainWindow):
         This method updates the parameter tree's UI with the saved spectrogram settings,
         ensuring that the parameters reflected in the interface match the loaded configuration.
         """
-        self.params_fft.child('Filters').child('Low Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][0], blockSignal=self.update_fft_params)
-        self.params_fft.child('Filters').child('High Filter').setValue(self.filters[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()][1], blockSignal=self.update_fft_params)
-        self.params_fft.child('nperseg').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg'], blockSignal=self.update_fft_params)
-        self.nperseg = self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nperseg']
+        self.band = self.params_detector.child('Band').value()
+        self.side = self.params_detector.child('Side').value()
+        self.params_fft.child('Filters').child('Low Filter').setValue(self.filters[self.side][self.band][0], blockSignal=self.update_fft_params)
+        self.params_fft.child('Filters').child('High Filter').setValue(self.filters[self.side][self.band][1], blockSignal=self.update_fft_params)
+        self.params_fft.child('nperseg').setValue(self.spect_params[self.side][self.band]['nperseg'], blockSignal=self.update_fft_params)
+        self.nperseg = self.spect_params[self.side][self.band]['nperseg']
         self.params_fft.child('noverlap').sigValueChanged.disconnect(self.update_fft_params)
         self.params_fft.child('noverlap').setLimits((0, self.params_fft.child('nperseg').value() - 1))
         self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
-        self.params_fft.child('noverlap').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['noverlap'], blockSignal=self.update_fft_params)
-        self.noverlap = self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['noverlap']
+        self.params_fft.child('noverlap').setValue(self.spect_params[self.side][self.band]['noverlap'], blockSignal=self.update_fft_params)
+        self.noverlap = self.spect_params[self.side][self.band]['noverlap']
         self.params_fft.child('nfft').sigValueChanged.disconnect(self.update_fft_params)
         self.params_fft.child('nfft').setLimits((self.params_fft.child('nperseg').value(), np.inf))
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
-        self.params_fft.child('nfft').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nfft'], blockSignal=self.update_fft_params)
-        self.nfft = self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['nfft']
-        self.params_fft.child('Subtract background').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract background'], blockSignal=self.update_fft_params)
-        self.subtract_background = self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract background']
-        self.params_fft.child('Subtract dispersion').setValue(self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract dispersion'], blockSignal=self.update_fft_params)
-        self.subtract_dispersion = self.spect_params[self.params_detector.child('Side').value()][self.params_detector.child('Band').value()]['subtract dispersion']
+        self.params_fft.child('nfft').setValue(self.spect_params[self.side][self.band]['nfft'], blockSignal=self.update_fft_params)
+        self.nfft = self.spect_params[self.side][self.band]['nfft']
+        self.params_fft.child('Subtract background').setValue(self.spect_params[self.side][self.band]['subtract background'], blockSignal=self.update_fft_params)
+        self.subtract_background = self.spect_params[self.side][self.band]['subtract background']
+        self.params_fft.child('Subtract dispersion').setValue(self.spect_params[self.side][self.band]['subtract dispersion'], blockSignal=self.update_fft_params)
+        self.subtract_dispersion = self.spect_params[self.side][self.band]['subtract dispersion']
+
+        # Update the exclusion filters from the dictionary of exclusions
+        self.params_fft.child('Exclude frequencies').clearChildren()
+
+        self.supress_exclusions = True
+        for exclusion in self.exclusion_filters[self.side][self.band]:
+            self.add_exclusion()
+            self.params_fft.child('Exclude frequencies').children()[-1].child('from').setValue(exclusion[0], blockSignal=self.update_exclusion_params)
+            self.params_fft.child('Exclude frequencies').children()[-1].child('to').setValue(exclusion[1], blockSignal=self.update_exclusion_params)
+        self.supress_exclusions = False
 
 
     def update_detector_params(self):
@@ -1031,9 +1095,6 @@ class PlotWindow(QMainWindow):
         sender = self.sender()
 
         self.set_saved_params()
-
-        self.band = self.params_detector.child('Band').value()
-        self.side = self.params_detector.child('Side').value()
 
         if sender == self.params_detector.child('Band'):
             if sender.value() == 'V':
@@ -1082,7 +1143,7 @@ class PlotWindow(QMainWindow):
         if not self.supress_updates_ffts:
             self.update_fft()
             self.update_all_beatf()
-            self.draw_beatf()
+            self.draw_beatfs()
             self.update_profile()
 
 
@@ -1128,9 +1189,9 @@ class PlotWindow(QMainWindow):
             lower_limit = int(1 + self.params_fft.child('burst size (odd)').value() // 2)
             upper_limit = int(len(self.time_stamps) - self.params_fft.child('burst size (odd)').value() // 2)
             self.supress_updates_ffts = True
-            self.params_sweep.child('Sweep').setLimits([lower_limit, upper_limit])
-            self.params_sweep.child('Sweep nº').setLimits([lower_limit, upper_limit])
-            self.params_sweep.child('Timestamp').setLimits([self.time_stamps[lower_limit - 1], self.time_stamps[upper_limit - 1]])
+            self.params_sweep.child('Sweep').setLimits((lower_limit, upper_limit))
+            self.params_sweep.child('Sweep nº').setLimits((lower_limit, upper_limit))
+            self.params_sweep.child('Timestamp').setLimits((self.time_stamps[lower_limit - 1], self.time_stamps[upper_limit - 1]))
             self.supress_updates_ffts = False
         
         elif sender == self.params_fft.child('Subtract background'):
@@ -1155,7 +1216,9 @@ class PlotWindow(QMainWindow):
 
         # Trigger updates after changes to FFT parameters
         if not self.supress_updates_ffts:
-            if sender == self.params_fft.child('Filters').child('Low Filter') or sender == self.params_fft.child('Filters').child('High Filter') or sender == self.params_fft.child('Subtract background'):
+            if (sender == self.params_fft.child('Filters').child('Low Filter') or 
+                sender == self.params_fft.child('Filters').child('High Filter') or 
+                sender == self.params_fft.child('Subtract background')):
                 self.draw_spectrogram()
                 self.update_one_beatf(self.band, self.side)
 
@@ -1172,7 +1235,7 @@ class PlotWindow(QMainWindow):
                 self.update_fft()
                 self.update_one_beatf(self.band, self.side)
             
-            self.draw_beatf()
+            self.draw_beatfs()
             self.update_profile()
 
 
@@ -1183,12 +1246,19 @@ class PlotWindow(QMainWindow):
         """
         pos = len(self.params_fft.child('Exclude frequencies').children())
         if pos < 10:
-            self.params_fft.child('Exclude frequencies').addChild({'name': f'{pos+1} º', 'type': 'group', 'children': [
+            self.params_fft.child('Exclude frequencies').addChild({'name': f'{pos+1}', 'type': 'group', 'children': [
                 {'name': 'from', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
                 {'name': 'to', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
-                {'name': 'Remove', 'type': 'action'},
+                {'name': 'Remove', 'type': 'action'}
             ]})
-            self.params_fft.child('Exclude frequencies').child(f'{pos+1} º').child('Remove').sigActivated.connect(self.remove_exclusion)
+
+            self.params_fft.child('Exclude frequencies').child(f'{pos+1}').child('from').sigValueChanged.connect(self.update_exclusion_params)
+            self.params_fft.child('Exclude frequencies').child(f'{pos+1}').child('to').sigValueChanged.connect(self.update_exclusion_params)
+            self.params_fft.child('Exclude frequencies').child(f'{pos+1}').child('Remove').sigActivated.connect(self.remove_exclusion)
+
+            # Add a list to the exclusion list at the respective band and side
+            if not self.supress_exclusions:
+                self.exclusion_filters[self.side][self.band].append([0, 0])
 
 
     def remove_exclusion(self):
@@ -1198,10 +1268,37 @@ class PlotWindow(QMainWindow):
         """
         sender = self.sender()
         parent = sender.parent()
-        num_of_parent = int(parent.name().split(' ')[0])
+        num_of_parent = int(parent.name())
         self.params_fft.child('Exclude frequencies').removeChild(parent)
         for i in range(num_of_parent, len(self.params_fft.child('Exclude frequencies').children()) + 1):
-            self.params_fft.child('Exclude frequencies').child(f'{i+1} º').setName(f'{i} º')
+            self.params_fft.child('Exclude frequencies').child(f'{i+1}').setName(f'{i}')
+        
+        # Remove the exclusion frequency from the exclusion list at the respective band and side
+        self.exclusion_filters[self.side][self.band].pop(num_of_parent - 1)
+
+        self.draw_beatf_spectrogram()
+        self.draw_beatfs()
+        self.update_profile()
+
+
+    def update_exclusion_params(self):
+        sender = self.sender()
+
+        if sender.name() == 'from':
+            if sender.value() > sender.parent().child('to').value():
+                sender.parent().child('to').setValue(sender.value(), blockSignal=self.update_exclusion_params)
+        
+        elif sender.name() == 'to':
+            if sender.value() < sender.parent().child('from').value():
+                sender.parent().child('from').setValue(sender.value(), blockSignal=self.update_exclusion_params)
+        
+        # Update the exclusion list at the respective band and side and respective exclusion number
+        exclusion_num = int(sender.parent().name())
+        self.exclusion_filters[self.side][self.band][exclusion_num - 1] = [sender.parent().child('from').value(), sender.parent().child('to').value()]
+
+        self.draw_beatf_spectrogram()
+        self.draw_beatfs()
+        self.update_profile()
 
 
     def update_reconstruct_params(self):

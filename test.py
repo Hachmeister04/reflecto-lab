@@ -182,37 +182,21 @@ if __name__ == "__main__":
     show_warning()
     sys.exit(app.exec()) """
 
-import pyqtgraph as pg
-from pyqtgraph.Qt import QtWidgets
-from pyqtgraph.parametertree import Parameter, ParameterTree, Interactor
+import numpy as np
 
-class CustomInteractor(Interactor):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.button = QtWidgets.QPushButton("Click Me")
-        self.button.clicked.connect(self.on_button_clicked)
-        self.addWidget(self.button)
+# Example data
+x = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+y = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90])
 
-    def on_button_clicked(self):
-        print("Button clicked!")
+# Define the interval to remove
+x_min, x_max = 3, 6  # Remove values in the range [3, 6]
 
-app = pg.mkQApp()
+# Create a mask for values outside the interval
+mask = (x < x_min) & (x > x_max)
 
-# Create the main parameter tree
-params = [
-    {'name': 'Action', 'type': 'group', 'children': [
-        {'name': 'Custom Button', 'type': 'interactor', 'interactor': CustomInteractor},
-    ]},
-]
+# Apply the mask to both arrays
+x_filtered = x[~mask]
+y_filtered = y[~mask]
 
-param_tree = ParameterTree()
-param = Parameter.create(name='params', type='group', children=params)
-param_tree.setParameters(param, showTop=False)
-
-win = QtWidgets.QWidget()
-layout = QtWidgets.QVBoxLayout()
-win.setLayout(layout)
-layout.addWidget(param_tree)
-win.show()
-
-app.exec_()
+print(x_filtered)  # [1 2 7 8 9]
+print(y_filtered)  # [10 20 70 80 90]
