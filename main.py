@@ -61,7 +61,9 @@ PROFILE_INVERSION_RESOLUTION = 150  # points
 
 # Profile Colors
 HFS_COLOR = 'r'
+HFS_EXCLUSION_COLOR = (250, 160, 160)
 LFS_COLOR = 'b'
+LFS_EXCLUSION_COLOR = (137, 207, 240)
 
 
 class PlotWindow(QMainWindow):
@@ -766,25 +768,40 @@ class PlotWindow(QMainWindow):
         self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~nan_mask]
         self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~nan_mask]
 
-        self.plot_beatf.plot(self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
-        self.plot_beatf.plot(self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
-
-        for side in self.beat_frequencies:
-            for band in self.beat_frequencies[side]:
-                f_probe = self.beat_frequencies[side][band][0]
-                beat_time = self.beat_frequencies[side][band][2]
-                # beat_freq = self.beat_frequencies[side][band][1]
-                self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
-        
-        # Draw the exclusion filters
+        # Remove the exclusion filters from the beat time data
         for side in self.exclusion_filters:
             for band in self.exclusion_filters[side]:
                 for exclusion in self.exclusion_filters[side][band]:
                     x_min = exclusion[0]
                     x_max = exclusion[1]
-                    mask = (self.beat_frequencies[side][band][0] >= x_min) & (self.beat_frequencies[side][band][0] <= x_max)
 
-                    self.plot_beatf.plot(self.beat_frequencies[side][band][0][mask], self.beat_frequencies[side][band][2][mask], pen=pg.mkPen(color='w', width=2))
+                    if side == 'HFS': # min() and max() prevent the user from excluding frequencies outside the range of the respective band and side
+                        mask = (self.all_delay_HFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_HFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
+                        self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~mask]
+                        self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~mask]
+                    
+                    elif side == 'LFS':
+                        mask = (self.all_delay_LFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_LFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
+                        self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~mask]
+                        self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~mask]
+
+        self.plot_beatf.plot(self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
+        self.plot_beatf.plot(self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
+
+        for side in self.beat_frequencies:
+            for band in self.beat_frequencies[side]:
+                # Draw the individual beat frequecies on top of the aggregated data
+                f_probe = self.beat_frequencies[side][band][0]
+                beat_time = self.beat_frequencies[side][band][2]
+                # beat_freq = self.beat_frequencies[side][band][1]
+                self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
+
+                # Draw the exclusion filters on top of the individual beat frequencies
+                for exclusion in self.exclusion_filters[side][band]:
+                    x_min = exclusion[0]
+                    x_max = exclusion[1]
+                    mask = (f_probe >= x_min) & (f_probe <= x_max)
+                    self.plot_beatf.plot(f_probe[mask], beat_time[mask], pen=pg.mkPen(color=HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR, width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_beatf.setLabel('left', 'Time Delay', units='s')
@@ -797,23 +814,6 @@ class PlotWindow(QMainWindow):
         and draws the resulting electron density on the profile plot.
         """
         start_time = time.time()
-
-        # Remove the exclusion filters from the beat time data
-        for side in self.exclusion_filters:
-            for band in self.exclusion_filters[side]:
-                for exclusion in self.exclusion_filters[side][band]:
-                    x_min = exclusion[0]
-                    x_max = exclusion[1]
-
-                    if side == 'HFS':
-                        mask = (self.all_delay_HFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_HFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
-                        self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~mask]
-                        self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~mask]
-                    
-                    elif side == 'LFS':
-                        mask = (self.all_delay_LFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_LFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
-                        self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~mask]
-                        self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~mask]
 
         group_delay_HFS_x = np.linspace(self.all_delay_HFS_f_probe[0], self.all_delay_HFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
         group_delay_HFS_y = np.interp(group_delay_HFS_x, self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time)
