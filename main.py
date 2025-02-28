@@ -74,7 +74,7 @@ class PlotWindow(QMainWindow):
     It manages multiple plots, user settings, and computation in a multi-threaded environment.
     """
     
-    request_signal = pyqtSignal()
+    request_signal = pyqtSignal(object)
 
     def __init__(self, parent=None, **kwargs):
         """Initialize the PlotWindow and its components.
@@ -891,7 +891,8 @@ class PlotWindow(QMainWindow):
             noverlap=noverlap, 
             nfft=nfft,
             return_onesided=False if corrected_burst.dtype == complex else True,
-            detrend=False
+            detrend=False,
+            window='boxcar',
         )
 
         f_probe = np.interp(t, np.arange(len(f)) / fs, f)
@@ -1324,7 +1325,7 @@ class PlotWindow(QMainWindow):
 
         This method emits a signal to start the reconstruction process and disables the UI elements related to this operation until it is complete.
         """
-        self.request_signal.emit()
+        self.request_signal.emit(self)
         self.params_reconstruct.child('Start Time').setOpts(enabled=False)
         self.params_reconstruct.child('End Time').setOpts(enabled=False)
         self.params_reconstruct.child('Time Step').setOpts(enabled=False)
@@ -1365,32 +1366,53 @@ class Threaded(QObject):
         super().__init__(parent=None, **kwargs)
 
 
-    @pyqtSlot()
-    def reconstruct(self):
+    @pyqtSlot(object)
+    def reconstruct(self, application):
         """Performs the full profile reconstruction for the specified shot.
 
         This method gathers the necessary parameters and calls the reconstruction method from the `rpspy`
         library, emitting a signal upon completion to notify the main window.
         """
+
+        spectrogram_options = {}
+
+        for side in ['HFS', 'LFS']:
+            spectrogram_options[side] = {}
+            for band in ['K', 'Ka', 'Q', 'V']:
+                spectrogram_options[side][band] = {
+                    'nperseg': application.spect_params[side][band]['nperseg'],
+                    'noverlap': application.spect_params[side][band]['noverlap'],
+                    'nfft': application.spect_params[side][band]['nfft']
+                }
+
+        subtract_background_on_bands = []
+        for side in ['HFS', 'LFS']:
+            for band in ['K', 'Ka', 'Q', 'V']:
+                if application.spect_params[side][band]['subtract background']:
+                    subtract_background_on_bands.append(f"{band}-{side}".capitalize())
+
+        subtract_dispersion_on_bands = []
+        for side in ['HFS', 'LFS']:
+            for band in ['K', 'Ka', 'Q', 'V']:
+                if application.spect_params[side][band]['subtract dispersion']:
+                    subtract_dispersion_on_bands.append(f"{band}-{side}".capitalize())
+
         rpspy.full_profile_reconstruction(
-            shot=main_window.shot, 
+            shot=application.shot, 
             destination_dir='reconstruction_shots', 
-            shotfile_dir=main_window.file_path, 
-            linearization_shotfile_dir=main_window.file_path, 
+            shotfile_dir=application.file_path, 
+            linearization_shotfile_dir=application.file_path, 
             sweep_linearization=None, 
-            shot_linearization=main_window.shot,
-            spectrogram_options={
-                'K': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
-                'Ka': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
-                'Q': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
-                'V': {'nperseg': main_window.nperseg, 'noverlap': main_window.noverlap, 'nfft': main_window.nfft},
-            }, 
-            filters=main_window.filters,
-            subtract_on_bands=None,
-            start_time=main_window.params_reconstruct.child('Start Time').value(), 
-            end_time=main_window.params_reconstruct.child('End Time').value(), 
-            time_step=main_window.params_reconstruct.child('Time Step').value(),
-            burst=int(main_window.params_fft.child('burst size (odd)').value()), 
+            shot_linearization=application.shot,
+            spectrogram_options=spectrogram_options,
+            filters=application.filters,
+            exclusion_regions=application.exclusion_filters,
+            subtract_background_on_bands=subtract_background_on_bands,
+            subtract_dispersion_on_bands=subtract_dispersion_on_bands,
+            start_time=application.params_reconstruct.child('Start Time').value(), 
+            end_time=application.params_reconstruct.child('End Time').value(), 
+            time_step=application.params_reconstruct.child('Time Step').value(),
+            burst=int(application.params_fft.child('burst size (odd)').value()), 
             write_dump=True,
             return_profiles=False,
         )
