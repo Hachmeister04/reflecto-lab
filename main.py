@@ -3,6 +3,7 @@ import numpy as np
 import json
 from scipy.signal import spectrogram
 from scipy.fft import fftshift
+import scipy.constants as cst
 from PyQt5.QtWidgets import QApplication, QMainWindow, QHeaderView
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 import pyqtgraph as pg
@@ -440,6 +441,14 @@ class PlotWindow(QMainWindow):
         for side in self.spect_params:
             for band in self.spect_params[side]:
                 self.calculate_background(band, side)
+
+        # Define inner and outer limiter positions for initialization ----------------------------
+
+        self.inner_limiter = rpspy.get_reflectometry_limiter_position('hfs')
+        self.outer_limiter = rpspy.get_reflectometry_limiter_position('lfs')
+
+        self.hfs_gd_at_zero_fp = 2 * (self.inner_limiter - rpspy.get_antenna_position('hfs')) / cst.c
+        self.lfs_gd_at_zero_fp = 2 * (rpspy.get_antenna_position('lfs') - self.outer_limiter) / cst.c
         
         # Plot everything---------------------------------------
 
@@ -728,7 +737,7 @@ class PlotWindow(QMainWindow):
         ))
 
         self.all_delay_HFS_beat_time = np.concatenate((
-            [0],
+            [self.hfs_gd_at_zero_fp],
             self.beat_frequencies['HFS']['K'][2],
             self.beat_frequencies['HFS']['Ka'][2],
             self.beat_frequencies['HFS']['Q'][2],
@@ -743,9 +752,8 @@ class PlotWindow(QMainWindow):
             self.beat_frequencies['LFS']['V'][0]
         ))
 
-        self.all_delay_LFS_beat_time = np.concatenate(
-            (
-            [0],
+        self.all_delay_LFS_beat_time = np.concatenate((
+            [self.lfs_gd_at_zero_fp],
             self.beat_frequencies['LFS']['K'][2],
             self.beat_frequencies['LFS']['Ka'][2],
             self.beat_frequencies['LFS']['Q'][2],
@@ -815,8 +823,11 @@ class PlotWindow(QMainWindow):
         group_delay_LFS_x = np.linspace(self.all_delay_LFS_f_probe[0], self.all_delay_LFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
         group_delay_LFS_y = np.interp(group_delay_LFS_x, self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time)
         
-        r_HFS = rpspy.profile_inversion(group_delay_HFS_x, group_delay_HFS_y, pwld_batch=True)
-        r_LFS = rpspy.profile_inversion(group_delay_LFS_x, group_delay_LFS_y, pwld_batch=True)
+        r_HFS = rpspy.profile_inversion(group_delay_HFS_x, np.clip(group_delay_HFS_y - group_delay_HFS_y[0], a_min=0, a_max=np.inf), pwld_batch=True)
+        r_LFS = rpspy.profile_inversion(group_delay_LFS_x, np.clip(group_delay_LFS_y - group_delay_LFS_y[0], a_min=0, a_max=np.inf), pwld_batch=True)
+
+        r_HFS = r_HFS + self.inner_limiter
+        r_LFS = -r_LFS + self.outer_limiter
         
         ne_HFS = rpspy.f_to_ne(group_delay_HFS_x)
         ne_LFS = rpspy.f_to_ne(group_delay_LFS_x)
