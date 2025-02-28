@@ -5,6 +5,47 @@ import numpy as np
 from functools import lru_cache
 from PyQt5.QtWidgets import QMessageBox
 
+try:
+    from ipfnpytools.trz_to_rhop import fast_trz_to_rhop
+    import aug_sfutils as sf
+    AUG_MODE = True
+
+except ImportError:
+    print("Warning: ipfnpytools and aug_sfutils not found. Some functions may not work.")
+    AUG_MODE = False
+
+
+@lru_cache(maxsize=5)
+def cached_get_equilibrium(shot):
+
+    eq = sf.EQU(shot, diag='IDE')
+    if not eq.sf.status:
+        eq = sf.EQU(shot, diag='EQH')
+
+    return eq
+
+def r_to_rho(t, r, shot, side):
+
+    # TODO: Get these values from the rpspy library
+    zlfs = 0.14  # Antenna height on LFS
+    zhfs = 0.07  # Antenna height on HFS
+
+    if side.lower() == 'lfs':
+        z = zlfs
+    elif side.lower() == 'hfs':
+        z = zhfs
+    else:
+        raise ValueError("Invalid side. Choose 'lfs' or 'hfs'.")
+
+    if AUG_MODE:
+        eq = cached_get_equilibrium(shot)
+        rho = fast_trz_to_rhop(t, r, z, eq_shotfile=eq)
+
+    else:
+        print("ipfnpytools and aug_sfutils not found. Cannot calculate rho.")
+        rho = r * 0.0
+
+    return rho
 
 def round_to_nearest(value: float, value_list: list):
     return min(value_list, key=lambda x: abs(x - value))

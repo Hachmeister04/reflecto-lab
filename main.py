@@ -300,6 +300,9 @@ class PlotWindow(QMainWindow):
             {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
+        self.params_profiles = Parameter.create(name='Profiles', type='group', visible=False, children=[
+            {'name': 'Coordinates', 'type': 'checklist', 'limits': ['R (m)', 'rho-poloidal'], 'exclusive': True, 'delay': 0},
+        ])
         self.params_fft = Parameter.create(name='Spectrogram', type='group', visible=False, children=[
             {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG, 'decimals': DECIMALS_NPERSEG, 'delay': 0},
             {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP, 'decimals': DECIMALS_NOVERLAP, 'delay': 0},
@@ -331,6 +334,7 @@ class PlotWindow(QMainWindow):
         self.param_tree.addParameters(self.params_config)
         self.param_tree.addParameters(self.params_detector)
         self.param_tree.addParameters(self.params_sweep)
+        self.param_tree.addParameters(self.params_profiles)
         self.param_tree.addParameters(self.params_fft)
         self.param_tree.addParameters(self.params_reconstruct)
 
@@ -352,6 +356,9 @@ class PlotWindow(QMainWindow):
         self.params_sweep.child('Sweep').sigValueChanged.connect(self.update_plot_params)
         self.params_sweep.child('Sweep nº').sigValueChanged.connect(self.update_plot_params)
         self.params_sweep.child('Timestamp').sigValueChanged.connect(self.update_plot_params)
+
+        # Connect the profiles to update the profile
+        self.params_profiles.child('Coordinates').sigValueChanged.connect(self.update_profile)
 
         # Connect the fft params to update the fft
         self.params_fft.child('nperseg').sigValueChanged.connect(self.update_fft_params)
@@ -421,6 +428,7 @@ class PlotWindow(QMainWindow):
         self.params_config.setOpts(visible=True)
         self.params_detector.setOpts(visible=True)
         self.params_sweep.setOpts(visible=True)
+        self.params_profiles.setOpts(visible=True)
         self.params_fft.setOpts(visible=True)
         self.params_reconstruct.setOpts(visible=True)
 
@@ -831,6 +839,11 @@ class PlotWindow(QMainWindow):
         
         ne_HFS = rpspy.f_to_ne(group_delay_HFS_x)
         ne_LFS = rpspy.f_to_ne(group_delay_LFS_x)
+
+        if self.params_profiles.child('Coordinates').value() == 'rho-poloidal':
+            r_HFS = func_aux.r_to_rho(self.params_sweep.child('Timestamp').value(), r_HFS, self.shot, 'HFS')
+            r_LFS = func_aux.r_to_rho(self.params_sweep.child('Timestamp').value(), r_LFS, self.shot, 'LFS')
+
 
         self.plot_profile.clear()
         self.plot_profile.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
