@@ -1403,6 +1403,8 @@ class Threaded(QObject):
             time_step=application.params_reconstruct.child('Time Step').value(),
             burst=int(application.params_fft.child('burst size (odd)').value()), 
             write_dump=True,
+            write_private_shotfile=True,
+            write_public_shotfile=False,
             return_profiles=False,
         )
         self.finished_signal.emit()
