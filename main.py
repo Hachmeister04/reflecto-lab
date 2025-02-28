@@ -220,18 +220,8 @@ class PlotWindow(QMainWindow):
 
         # Store the exclusion filters
         self.exclusion_filters = {
-            'HFS': {
-                'K': [], # [[low, high], [low, high], ...]
-                'Ka': [],
-                'Q': [],
-                'V': []
-            },
-            'LFS': {
-                'K': [],
-                'Ka': [],
-                'Q': [],
-                'V': []
-            }
+            'HFS': [], # [[low, high], [low, high], ...]              
+            'LFS': [],
         }
 
         # Set the application icon
@@ -653,7 +643,7 @@ class PlotWindow(QMainWindow):
         self.plot_spect.plot(self.f_probe, self.y_beatf, pen=pg.mkPen(color='r', width=2))
 
         # Draw the exclusion filters
-        for exclusion in self.exclusion_filters[self.side][self.band]:
+        for exclusion in self.exclusion_filters[self.side]:
             x_min = exclusion[0]
             x_max = exclusion[1]
             mask = (self.f_probe >= x_min) & (self.f_probe <= x_max)
@@ -770,20 +760,19 @@ class PlotWindow(QMainWindow):
 
         # Remove the exclusion filters from the beat time data
         for side in self.exclusion_filters:
-            for band in self.exclusion_filters[side]:
-                for exclusion in self.exclusion_filters[side][band]:
-                    x_min = exclusion[0]
-                    x_max = exclusion[1]
+            for exclusion in self.exclusion_filters[side]:
+                x_min = exclusion[0]
+                x_max = exclusion[1]
 
-                    if side == 'HFS': # min() and max() prevent the user from excluding frequencies outside the range of the respective band and side
-                        mask = (self.all_delay_HFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_HFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
-                        self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~mask]
-                        self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~mask]
-                    
-                    elif side == 'LFS':
-                        mask = (self.all_delay_LFS_f_probe >= max(x_min, self.beat_frequencies[side][band][0][0])) & (self.all_delay_LFS_f_probe <= min(x_max, self.beat_frequencies[side][band][0][-1]))
-                        self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~mask]
-                        self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~mask]
+                if side == 'HFS': 
+                    mask = (self.all_delay_HFS_f_probe >= x_min) & (self.all_delay_HFS_f_probe <= x_max)
+                    self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~mask]
+                    self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~mask]
+                
+                elif side == 'LFS':
+                    mask = (self.all_delay_LFS_f_probe >= x_min) & (self.all_delay_LFS_f_probe <= x_max)
+                    self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~mask]
+                    self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~mask]
 
         self.plot_beatf.plot(self.all_delay_HFS_f_probe, self.all_delay_HFS_beat_time, pen=pg.mkPen(color='w', width=2))
         self.plot_beatf.plot(self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time, pen=pg.mkPen(color='w', width=2))
@@ -796,12 +785,12 @@ class PlotWindow(QMainWindow):
                 # beat_freq = self.beat_frequencies[side][band][1]
                 self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
 
-                # Draw the exclusion filters on top of the individual beat frequencies
-                for exclusion in self.exclusion_filters[side][band]:
-                    x_min = exclusion[0]
-                    x_max = exclusion[1]
-                    mask = (f_probe >= x_min) & (f_probe <= x_max)
-                    self.plot_beatf.plot(f_probe[mask], beat_time[mask], pen=pg.mkPen(color=HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR, width=2))
+            # Draw the exclusion filters on top of the individual beat frequencies
+            for exclusion in self.exclusion_filters[side]:
+                x_min = exclusion[0]
+                x_max = exclusion[1]
+                mask = (f_probe >= x_min) & (f_probe <= x_max)
+                self.plot_beatf.plot(f_probe[mask], beat_time[mask], pen=pg.mkPen(color=HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR, width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_beatf.setLabel('left', 'Time Delay', units='s')
@@ -1080,7 +1069,7 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('Exclude frequencies').clearChildren()
 
         self.supress_exclusions = True
-        for exclusion in self.exclusion_filters[self.side][self.band]:
+        for exclusion in self.exclusion_filters[self.side]:
             self.add_exclusion()
             self.params_fft.child('Exclude frequencies').children()[-1].child('from').setValue(exclusion[0], blockSignal=self.update_exclusion_params)
             self.params_fft.child('Exclude frequencies').children()[-1].child('to').setValue(exclusion[1], blockSignal=self.update_exclusion_params)
@@ -1241,7 +1230,7 @@ class PlotWindow(QMainWindow):
 
 
     def add_exclusion(self):
-        """Adds a new exclusion frequency range to the list of excluded frequencies (max. 10 exclusions).
+        """Adds a new exclusion frequency range to the list of excluded frequencies (max. 10 exclusions per side HFS and LFS).
 
         This method adds a new parameter group to the exclusion parameter, allowing the user to specify a frequency range to exclude.
         """
@@ -1259,7 +1248,7 @@ class PlotWindow(QMainWindow):
 
             # Add a list to the exclusion list at the respective band and side
             if not self.supress_exclusions:
-                self.exclusion_filters[self.side][self.band].append([0, 0])
+                self.exclusion_filters[self.side].append([0, 0])
 
 
     def remove_exclusion(self):
@@ -1275,7 +1264,7 @@ class PlotWindow(QMainWindow):
             self.params_fft.child('Exclude frequencies').child(f'{i+1}').setName(f'{i}')
         
         # Remove the exclusion frequency from the exclusion list at the respective band and side
-        self.exclusion_filters[self.side][self.band].pop(num_of_parent - 1)
+        self.exclusion_filters[self.side].pop(num_of_parent - 1)
 
         self.draw_beatf_spectrogram()
         self.draw_beatfs()
@@ -1295,7 +1284,7 @@ class PlotWindow(QMainWindow):
         
         # Update the exclusion list at the respective band and side and respective exclusion number
         exclusion_num = int(sender.parent().name())
-        self.exclusion_filters[self.side][self.band][exclusion_num - 1] = [sender.parent().child('from').value(), sender.parent().child('to').value()]
+        self.exclusion_filters[self.side][exclusion_num - 1] = [sender.parent().child('from').value(), sender.parent().child('to').value()]
 
         self.draw_beatf_spectrogram()
         self.draw_beatfs()
