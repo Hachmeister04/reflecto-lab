@@ -318,7 +318,12 @@ class PlotWindow(QMainWindow):
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True, 'delay': 0},
-            {'name': 'Reconstruct Shot', 'type': 'action'}
+            {'name': 'Reconstruct Shot', 'type': 'action'},
+            {'name': 'Reconstruction Output', 'title': 'Reconstruction Output', 'type': 'group', 'children': [
+                {'name': 'Dumpfile', 'type': 'bool', 'value': True, 'delay': 0},
+                {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
+                {'name': 'Public Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
+            ]},
         ])
 
         self.param_tree.addParameters(self.params_file)
@@ -1402,12 +1407,17 @@ class Threaded(QObject):
             end_time=application.params_reconstruct.child('End Time').value(), 
             time_step=application.params_reconstruct.child('Time Step').value(),
             burst=int(application.params_fft.child('burst size (odd)').value()), 
-            write_dump=True,
-            write_private_shotfile=True,
-            write_public_shotfile=False,
+            write_dump=application.params_reconstruct.child('Reconstruction Output').child('Dumpfile').value(),
+            write_private_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
+            write_public_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             return_profiles=False,
         )
         self.finished_signal.emit()
+
+
+        # {'name': 'Dumpfile', 'type': 'bool', 'value': True, 'delay': 0},
+        #         {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
+        #         {'name': 'Public Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
 
 
 if __name__ == '__main__':
