@@ -806,12 +806,12 @@ class PlotWindow(QMainWindow):
                 # beat_freq = self.beat_frequencies[side][band][1]
                 self.plot_beatf.plot(f_probe, beat_time, pen=pg.mkPen(color=HFS_COLOR if side == 'HFS' else LFS_COLOR, width=2))
 
-            # Draw the exclusion filters on top of the individual beat frequencies
-            for exclusion in self.exclusion_filters[side]:
-                x_min = exclusion[0]
-                x_max = exclusion[1]
-                mask = (f_probe >= x_min) & (f_probe <= x_max)
-                self.plot_beatf.plot(f_probe[mask], beat_time[mask], pen=pg.mkPen(color=HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR, width=2))
+                # Draw the exclusion filters on top of the individual beat frequencies
+                for exclusion in self.exclusion_filters[side]:
+                    x_min = exclusion[0]
+                    x_max = exclusion[1]
+                    mask = (f_probe >= x_min) & (f_probe <= x_max)
+                    self.plot_beatf.plot(f_probe[mask], beat_time[mask], pen=pg.mkPen(color=HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR, width=2))
 
         self.plot_beatf.setLabel('bottom', 'Probing Frequency', units='Hz')
         self.plot_beatf.setLabel('left', 'Time Delay', units='s')
@@ -843,7 +843,6 @@ class PlotWindow(QMainWindow):
         if self.params_profiles.child('Coordinates').value() == 'rho-poloidal':
             r_HFS = func_aux.r_to_rho(self.params_sweep.child('Timestamp').value(), r_HFS, self.shot, 'HFS')
             r_LFS = func_aux.r_to_rho(self.params_sweep.child('Timestamp').value(), r_LFS, self.shot, 'LFS')
-
 
         self.plot_profile.clear()
         self.plot_profile.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
@@ -1275,7 +1274,7 @@ class PlotWindow(QMainWindow):
             self.params_fft.child('Exclude frequencies').child(f'{pos+1}').child('to').sigValueChanged.connect(self.update_exclusion_params)
             self.params_fft.child('Exclude frequencies').child(f'{pos+1}').child('Remove').sigActivated.connect(self.remove_exclusion)
 
-            # Add a list to the exclusion list at the respective band and side
+            # Add a list to the exclusion list at the respective side
             if not self.supress_exclusions:
                 self.exclusion_filters[self.side].append([0, 0])
 
@@ -1292,7 +1291,7 @@ class PlotWindow(QMainWindow):
         for i in range(num_of_parent, len(self.params_fft.child('Exclude frequencies').children()) + 1):
             self.params_fft.child('Exclude frequencies').child(f'{i+1}').setName(f'{i}')
         
-        # Remove the exclusion frequency from the exclusion list at the respective band and side
+        # Remove the exclusion frequency from the exclusion list at the respective side
         self.exclusion_filters[self.side].pop(num_of_parent - 1)
 
         self.draw_beatf_spectrogram()
