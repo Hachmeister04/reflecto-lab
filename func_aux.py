@@ -4,6 +4,7 @@ import json
 import numpy as np
 from functools import lru_cache
 from PyQt5.QtWidgets import QMessageBox
+from scipy.interpolate import RegularGridInterpolator
 
 try:
     from ipfnpytools.trz_to_rhop import fast_trz_to_rhop
@@ -16,13 +17,38 @@ except ImportError:
 
 
 @lru_cache(maxsize=5)
-def cached_get_equilibrium(shot):
-
+def cached_get_equilibrium_interpolator(shot):
+    """Convert time, rho poloidal, and z coordinates to R.
+    
+    Parameters
+    ----------
+    shot: int
+        Shot number.
+        
+    Returns
+    -------
+    rho_trz: ndarray
+        Rho poloidal coordinates.
+        
+    """
+    
     eq = sf.EQU(shot, diag='IDE')
     if not eq.sf.status:
         eq = sf.EQU(shot, diag='EQH')
+    
+    rho_trz = RegularGridInterpolator(
+        points=(
+            np.array(eq.Rmesh, dtype=np.float32), 
+            np.array(eq.Zmesh, dtype=np.float32),
+            np.array(eq.time, dtype=np.float32),
+        ), 
+        values=np.array(np.sqrt((eq.pfm - eq.psi0)/(eq.psix-eq.psi0)), dtype=np.float32), 
+        bounds_error=False,
+        fill_value=np.nan,
+    )
+    
+    return rho_trz
 
-    return eq
 
 def r_to_rho(t, r, shot, side):
 
@@ -38,8 +64,10 @@ def r_to_rho(t, r, shot, side):
         raise ValueError("Invalid side. Choose 'lfs' or 'hfs'.")
 
     if AUG_MODE:
-        eq = cached_get_equilibrium(shot)
-        rho = fast_trz_to_rhop(t, r, z, eq_shotfile=eq)
+
+        [t, r, z] = np.broadcast_arrays(t, r, z)
+        interpolator = cached_get_equilibrium_interpolator(shot)
+        rho = interpolator(np.array([r.flatten(), z.flatten(), t.flatten()], dtype=np.float32).T).reshape(r.shape)
 
     else:
         print("ipfnpytools and aug_sfutils not found. Cannot calculate rho.")
