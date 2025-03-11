@@ -786,12 +786,12 @@ class PlotWindow(QMainWindow):
                 x_max = exclusion[1]
 
                 if side == 'HFS': 
-                    mask = (self.all_delay_HFS_f_probe >= x_min) & (self.all_delay_HFS_f_probe <= x_max)
+                    mask = (self.all_delay_HFS_f_probe >= x_min) & (self.all_delay_HFS_f_probe <= x_max) & (self.all_delay_HFS_f_probe != 0) # We don't want to exclude the zero frequency because it ruins the concatenation
                     self.all_delay_HFS_f_probe = self.all_delay_HFS_f_probe[~mask]
                     self.all_delay_HFS_beat_time = self.all_delay_HFS_beat_time[~mask]
                 
                 elif side == 'LFS':
-                    mask = (self.all_delay_LFS_f_probe >= x_min) & (self.all_delay_LFS_f_probe <= x_max)
+                    mask = (self.all_delay_LFS_f_probe >= x_min) & (self.all_delay_LFS_f_probe <= x_max) & (self.all_delay_LFS_f_probe != 0)
                     self.all_delay_LFS_f_probe = self.all_delay_LFS_f_probe[~mask]
                     self.all_delay_LFS_beat_time = self.all_delay_LFS_beat_time[~mask]
 
@@ -848,7 +848,7 @@ class PlotWindow(QMainWindow):
         self.plot_profile.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
         self.plot_profile.plot(r_LFS, ne_LFS * 1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
         
-        self.plot_profile.setLabel('bottom', 'radius', units='m')
+        self.plot_profile.setLabel('bottom', 'radius', units='m' if self.params_profiles.child('Coordinates').value() == 'R (m)' else '')
         self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
 
         print("profile")

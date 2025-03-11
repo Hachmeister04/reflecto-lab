@@ -1,0 +1,116 @@
+{
+    "parameters": {
+        "HFS": {
+            "K": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": null
+            },
+            "Ka": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": null
+            },
+            "Q": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": null
+            },
+            "V": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": true
+            }
+        },
+        "LFS": {
+            "K": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": null
+            },
+            "Ka": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": null
+            },
+            "Q": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": null
+            },
+            "V": {
+                "nperseg": 256,
+                "noverlap": 220,
+                "nfft": 512,
+                "subtract background": false,
+                "subtract dispersion": true
+            }
+        }
+    },
+    "filters": {
+        "HFS": {
+            "K": [
+                0,
+                10000000.0
+            ],
+            "Ka": [
+                0,
+                10000000.0
+            ],
+            "Q": [
+                0,
+                10000000.0
+            ],
+            "V": [
+                0,
+                10000000.0
+            ]
+        },
+        "LFS": {
+            "K": [
+                0,
+                10000000.0
+            ],
+            "Ka": [
+                0,
+                10000000.0
+            ],
+            "Q": [
+                0,
+                10000000.0
+            ],
+            "V": [
+                0,
+                10000000.0
+            ]
+        }
+    },
+    "burst_size": 1,
+    "exclusion_filters": {
+        "HFS": [
+            [
+                18000000000.0,
+                20000000000.0
+            ],
+            [
+                50000000000.0,
+                60000000000.0
+            ]
+        ],
+        "LFS": []
+    }
+}

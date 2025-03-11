@@ -91,8 +91,8 @@ def show_warning():
     msg = QMessageBox()
     msg.setIcon(QMessageBox.Warning)
     msg.setWindowTitle("Warning")
-    msg.setText("Shot not found!!!!!!")
-    msg.setInformativeText("Critical error! Self-destruction in 3... 2... 1...")
+    msg.setText("Raw data not found for the selected shot \n OR \n Selected folder does not contain valid raw data.")
+    #msg.setInformativeText("Selected folder does not contain valid raw data.")
     msg.setStandardButtons(QMessageBox.Ok)
     #msg.setDefaultButton(QMessageBox.Ok)
     
