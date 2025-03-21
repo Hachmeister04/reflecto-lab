@@ -56,6 +56,7 @@ DECIMALS_NPERSEG = 6
 DECIMALS_NOVERLAP = 6
 DECIMALS_NFFT = 6
 DECIMALS_EXCLUSIONS = 6
+DECIMALS_INIT = 6
 
 # Profile Properties
 PROFILE_INVERSION_RESOLUTION = 150  # points
@@ -101,6 +102,7 @@ class PlotWindow(QMainWindow):
         # Define some useful attributes
         self.supress_updates_ffts = False  # Prevents repeated call of the update functions from the update_fft_params function
         self.supress_exclusions = False # Prevents unnecessary additions to the exclusion filters when changing the band or side
+        self.supress_updates_init = False  # Prevents repeated call of the update functions from the initialization function
         self.shot = 0
         self.file_path = ''
         
@@ -222,7 +224,34 @@ class PlotWindow(QMainWindow):
         # Store the exclusion filters
         self.exclusion_filters = {
             'HFS': [], # [[low, high], [low, high], ...]              
-            'LFS': [],
+            'LFS': []
+        }
+
+        self.init_values = {
+            'HFS': {
+                'Type': 'Default (recommended)',
+                'Custom_Value': 0,
+                'File': {
+                    'name': '',
+                    'array': {
+                        'time': None,
+                        'position': None
+                    },
+                'Current_Value': 0
+                },
+            },
+            'LFS': {
+                'Type': 'Default (recommended)',
+                'Custom_Value': 0,
+                'File': {
+                    'name': '',
+                    'array': {
+                        'time': None,
+                        'position': None
+                    },
+                'Current_Value': 0
+                },
+            },
         }
 
         # Set the application icon
@@ -284,6 +313,13 @@ class PlotWindow(QMainWindow):
         ])
         self.params_file.child('Open').setValue('')
 
+        self.params_init = Parameter.create(name='Initialization', type='group', visible=False, children=[
+            {'name': 'Type', 'type': 'list', 'limits': ['Default (recommended)', 'Custom', 'From file'], 'delay': 0},
+            {'name': 'File', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'CSV Files (*.csv)', 'visible': False, 'delay': 0},
+            {'name': 'Value', 'type': 'float', 'value': 0, 'suffix': 'm', 'siPrefix': True, 'decimals': DECIMALS_INIT, 'readonly': True, 'delay': 0}
+        ])
+        self.params_init.child('File').setValue('')
+
         self.params_config = Parameter.create(name='Configuration', type='group', visible=False, children=[
             {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)'},
             {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)'}
@@ -300,9 +336,6 @@ class PlotWindow(QMainWindow):
             {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
-        self.params_profiles = Parameter.create(name='Profiles', type='group', visible=False, children=[
-            {'name': 'Coordinates', 'type': 'checklist', 'limits': ['R (m)', 'rho-poloidal'], 'exclusive': True, 'delay': 0},
-        ])
         self.params_fft = Parameter.create(name='Spectrogram', type='group', visible=False, children=[
             {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG, 'decimals': DECIMALS_NPERSEG, 'delay': 0},
             {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP, 'decimals': DECIMALS_NOVERLAP, 'delay': 0},
@@ -318,6 +351,9 @@ class PlotWindow(QMainWindow):
             ]},
             {'name': 'Exclude frequencies', 'type': 'group', 'addText': 'Add'}
         ])
+        self.params_profiles = Parameter.create(name='Profiles', type='group', visible=False, children=[
+            {'name': 'Coordinates', 'type': 'checklist', 'limits': ['R (m)', 'rho-poloidal'], 'exclusive': True, 'delay': 0},
+        ])
         self.params_reconstruct = Parameter.create(name='Reconstruct Shot', type='group', visible=False, children=[
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
@@ -331,11 +367,12 @@ class PlotWindow(QMainWindow):
         ])
 
         self.param_tree.addParameters(self.params_file)
+        self.param_tree.addParameters(self.params_init)
         self.param_tree.addParameters(self.params_config)
         self.param_tree.addParameters(self.params_detector)
         self.param_tree.addParameters(self.params_sweep)
-        self.param_tree.addParameters(self.params_profiles)
         self.param_tree.addParameters(self.params_fft)
+        self.param_tree.addParameters(self.params_profiles)
         self.param_tree.addParameters(self.params_reconstruct)
 
         # Connect the parameters to the functions-----------------------------------
@@ -343,6 +380,11 @@ class PlotWindow(QMainWindow):
         # Connect the file to the function that displays the rest of the parameters and the graphs
         self.params_file.child('Open').sigValueChanged.connect(self.update_shot)
         self.params_file.child('Shot').sigValueChanged.connect(self.update_shot)
+
+        # Connect the initialization parameters to update the initialization
+        self.params_init.child('Type').sigValueChanged.connect(self.update_init_params)
+        self.params_init.child('Value').sigValueChanged.connect(self.update_init_params)
+        self.params_init.child('File').sigValueChanged.connect(self.update_init_params)
 
         # Connect the save and load buttons to the handling functions
         self.params_config.child('Save').sigValueChanged.connect(self.save_config)
@@ -357,10 +399,7 @@ class PlotWindow(QMainWindow):
         self.params_sweep.child('Sweep nº').sigValueChanged.connect(self.update_plot_params)
         self.params_sweep.child('Timestamp').sigValueChanged.connect(self.update_plot_params)
 
-        # Connect the profiles to update the profile
-        self.params_profiles.child('Coordinates').sigValueChanged.connect(self.update_profile)
-
-        # Connect the fft params to update the fft
+        # Connect the fft parameters to update the fft
         self.params_fft.child('nperseg').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('noverlap').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('nfft').sigValueChanged.connect(self.update_fft_params)
@@ -372,6 +411,9 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('Filters').child('Low Filter').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('Filters').child('High Filter').sigValueChanged.connect(self.update_fft_params)
         self.params_fft.child('Exclude frequencies').sigAddNew.connect(self.add_exclusion)
+
+        # Connect the profiles parameter to update the profile
+        self.params_profiles.child('Coordinates').sigValueChanged.connect(self.update_profile)
 
         # Connect the start and end times to each other
         self.params_reconstruct.child('Start Time').sigValueChanged.connect(self.update_reconstruct_params)
@@ -425,6 +467,7 @@ class PlotWindow(QMainWindow):
 
         # Show all parameters-----------------------------------------------------------
 
+        self.params_init.setOpts(visible=True)
         self.params_config.setOpts(visible=True)
         self.params_detector.setOpts(visible=True)
         self.params_sweep.setOpts(visible=True)
@@ -450,13 +493,17 @@ class PlotWindow(QMainWindow):
             for band in self.spect_params[side]:
                 self.calculate_background(band, side)
 
-        # Define inner and outer limiter positions for initialization ----------------------------
+        # Define default inner and outer limiter positions for initialization ----------------------------
 
         self.inner_limiter = rpspy.get_reflectometry_limiter_position('hfs')
-        self.outer_limiter = rpspy.get_reflectometry_limiter_position('lfs')
-
         self.hfs_gd_at_zero_fp = 2 * (self.inner_limiter - rpspy.get_antenna_position('hfs')) / cst.c
+        self.init_values['HFS']['Current_Value'] = self.inner_limiter
+
+        self.outer_limiter = rpspy.get_reflectometry_limiter_position('lfs')
         self.lfs_gd_at_zero_fp = 2 * (rpspy.get_antenna_position('lfs') - self.outer_limiter) / cst.c
+        self.init_values['LFS']['Current_Value'] = self.outer_limiter
+
+        self.initialization(update_profiles_and_beatf=False, define_init_funcs=True)
         
         # Plot everything---------------------------------------
 
@@ -482,6 +529,63 @@ class PlotWindow(QMainWindow):
         self.params_fft.child('Filters').child('High Filter').setLimits((abs(self.f_beat[0] - self.f_beat[1]), np.inf))
         self.params_reconstruct.child('Start Time').setLimits((0, len(self.time_stamps) * (self.time_stamps[1] - self.time_stamps[0])))
         self.params_reconstruct.child('End Time').setLimits((0, len(self.time_stamps) * (self.time_stamps[1] - self.time_stamps[0])))
+
+
+    def initialization(self, update_profiles_and_beatf=True, define_init_funcs=False):
+        if self.init_values[self.side]['Type'] == 'Default (recommended)':
+            if self.side == 'HFS':
+                self.inner_limiter = rpspy.get_reflectometry_limiter_position('hfs')
+                self.hfs_gd_at_zero_fp = 2 * (self.inner_limiter - rpspy.get_antenna_position('hfs')) / cst.c
+            elif self.side == 'LFS':
+                self.outer_limiter = rpspy.get_reflectometry_limiter_position('lfs')
+                self.lfs_gd_at_zero_fp = 2 * (rpspy.get_antenna_position('lfs') - self.outer_limiter) / cst.c
+        
+        elif self.init_values[self.side]['Type'] == 'Custom':
+            if self.side == 'HFS':
+                self.inner_limiter = self.init_values[self.side]['Custom_Value']
+                self.hfs_gd_at_zero_fp = 2 * (self.inner_limiter - rpspy.get_antenna_position('hfs')) / cst.c
+            elif self.side == 'LFS':
+                self.outer_limiter = self.init_values[self.side]['Custom_Value']
+                self.lfs_gd_at_zero_fp = 2 * (rpspy.get_antenna_position('lfs') - self.outer_limiter) / cst.c
+        
+        for side in self.init_values:
+            if self.init_values[side]['Type'] == 'From file':
+                if self.init_values[side]['File']['name'] != '':
+                    time_array = self.init_values[side]['File']['array']['time']
+                    position_array = self.init_values[side]['File']['array']['position']
+                    # Linearly interpolate the "new" limiter position for the current timestamp
+                    limiter = np.interp(self.params_sweep.child('Timestamp').value(), time_array, position_array)
+
+                    if side == 'HFS':
+                        self.inner_limiter = limiter
+                        self.hfs_gd_at_zero_fp = 2 * (self.inner_limiter - rpspy.get_antenna_position('hfs')) / cst.c
+                        self.init_values[side]['Current_Value'] = self.inner_limiter
+                    if side == 'LFS':
+                        self.outer_limiter = limiter
+                        self.lfs_gd_at_zero_fp = 2 * (rpspy.get_antenna_position('lfs') - self.outer_limiter) / cst.c
+                        self.init_values[side]['Current_Value'] = self.outer_limiter
+        
+        if self.side == 'HFS':
+            self.params_init.child('Value').setValue(self.inner_limiter, blockSignal=self.update_init_params)
+            self.init_values[self.side]['Current_Value'] = self.inner_limiter
+        elif self.side == 'LFS':
+            self.params_init.child('Value').setValue(self.outer_limiter, blockSignal=self.update_init_params)
+            self.init_values[self.side]['Current_Value'] = self.outer_limiter
+
+        if update_profiles_and_beatf:
+            self.draw_beatfs()
+            self.update_profile()
+        
+        if define_init_funcs:
+            # Create a initialization functions for full profile reconstruction
+            def get_init(side, time):
+                if self.init_values[side]['Type'] == 'From file':
+                    return np.interp(time, self.init_values[side]['File']['array']['time'], self.init_values[side]['File']['array']['position'])
+
+                else:
+                    return self.inner_limiter if side == 'HFS' else self.outer_limiter
+            
+            self.get_init = get_init
 
 
     def update_plot(self):
@@ -831,8 +935,8 @@ class PlotWindow(QMainWindow):
         group_delay_LFS_x = np.linspace(self.all_delay_LFS_f_probe[0], self.all_delay_LFS_f_probe[-1], PROFILE_INVERSION_RESOLUTION)
         group_delay_LFS_y = np.interp(group_delay_LFS_x, self.all_delay_LFS_f_probe, self.all_delay_LFS_beat_time)
         
-        r_HFS = rpspy.profile_inversion(group_delay_HFS_x, np.clip(group_delay_HFS_y - group_delay_HFS_y[0], a_min=0, a_max=np.inf), pwld_batch=True)
-        r_LFS = rpspy.profile_inversion(group_delay_LFS_x, np.clip(group_delay_LFS_y - group_delay_LFS_y[0], a_min=0, a_max=np.inf), pwld_batch=True)
+        r_HFS = rpspy.profile_inversion(group_delay_HFS_x, np.clip(group_delay_HFS_y - group_delay_HFS_y[0], a_min=-np.inf, a_max=np.inf), pwld_batch=True)
+        r_LFS = rpspy.profile_inversion(group_delay_LFS_x, np.clip(group_delay_LFS_y - group_delay_LFS_y[0], a_min=-np.inf, a_max=np.inf), pwld_batch=True)
 
         r_HFS = r_HFS + self.inner_limiter
         r_LFS = -r_LFS + self.outer_limiter
@@ -1015,6 +1119,46 @@ class PlotWindow(QMainWindow):
 
 # Parameters ---------------------------------------------------------------------------------------------------------------------
 
+    def update_init_params(self):
+        sender = self.sender()
+
+        if sender == self.params_init.child('Type'):
+            self.init_values[self.side]['Type'] = sender.value()
+            
+            if sender.value() == 'Default (recommended)':
+                self.params_init.child('Value').setOpts(readonly=True)
+                self.params_init.child('File').setOpts(visible=False)
+            
+            elif sender.value() == 'Custom':
+                self.params_init.child('Value').setOpts(readonly=False)
+                self.params_init.child('File').setOpts(visible=False)
+
+            elif sender.value() == 'From file':
+                self.params_init.child('Value').setOpts(readonly=True)
+                self.params_init.child('File').setOpts(visible=True)
+        
+        elif sender == self.params_init.child('Value'):
+            self.init_values[self.side]['Custom_Value'] = sender.value()
+
+        elif sender == self.params_init.child('File'):
+            path = sender.value()
+
+            # Load CSV initialization file
+            data = np.atleast_2d(np.loadtxt(path, delimiter=',')) 
+
+            # Separate columns into time and position arrays
+            time_array = data[:, 0]
+            position_array = data[:, 1]
+
+            self.init_values[self.side]['File']['array']['time'] = time_array
+            self.init_values[self.side]['File']['array']['position'] = position_array
+
+            self.params_init.child('File').setValue(path + ' (loaded)', blockSignal=self.update_init_params)
+            self.init_values[self.side]['File']['name'] = self.params_init.child('File').value()
+
+        self.initialization(define_init_funcs=True)
+
+
     def save_config(self):
         """Saves the current configuration settings to a JSON file.
 
@@ -1103,6 +1247,24 @@ class PlotWindow(QMainWindow):
             self.params_fft.child('Exclude frequencies').children()[-1].child('to').setValue(exclusion[1], blockSignal=self.update_exclusion_params)
         self.supress_exclusions = False
 
+        # Update the initialization parameters from the dictionary of initializations
+        #TODO: Find a way to use the Value parameter for the 3 types of initialization
+        self.params_init.child('Type').setValue(self.init_values[self.side]['Type'], blockSignal=self.update_init_params)
+        self.params_init.child('Value').setValue(self.init_values[self.side]['Current_Value'], blockSignal=self.update_init_params)
+        self.params_init.child('File').setValue(self.init_values[self.side]['File']['name'], blockSignal=self.update_init_params)
+
+        if self.init_values[self.side]['Type'] == 'Default (recommended)':
+            self.params_init.child('Value').setOpts(readonly=True)
+            self.params_init.child('File').setOpts(visible=False)
+
+        elif self.init_values[self.side]['Type'] == 'Custom':
+            self.params_init.child('Value').setOpts(readonly=False)
+            self.params_init.child('File').setOpts(visible=False)
+        
+        elif self.init_values[self.side]['Type'] == 'From file':
+            self.params_init.child('Value').setOpts(readonly=True)
+            self.params_init.child('File').setOpts(visible=True)
+
 
     def update_detector_params(self):
         """Updates the parameters related to the selected detector band and side.
@@ -1155,7 +1317,9 @@ class PlotWindow(QMainWindow):
             self.params_sweep.child('Timestamp').setValue(timestamp, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
             self.params_sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self.update_plot_params)
-        
+
+        self.initialization(update_profiles_and_beatf=False)
+
         self.update_plot()
 
         if not self.supress_updates_ffts:
@@ -1434,6 +1598,8 @@ class Threaded(QObject):
             write_private_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             return_profiles=False,
+            initialization_lfs=lambda time: self.get_init('LFS', time),
+            initialization_hfs=lambda time: self.get_init('HFS', time),
         )
         self.finished_signal.emit()
 
