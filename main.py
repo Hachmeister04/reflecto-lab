@@ -1248,7 +1248,6 @@ class PlotWindow(QMainWindow):
         self.supress_exclusions = False
 
         # Update the initialization parameters from the dictionary of initializations
-        #TODO: Find a way to use the Value parameter for the 3 types of initialization
         self.params_init.child('Type').setValue(self.init_values[self.side]['Type'], blockSignal=self.update_init_params)
         self.params_init.child('Value').setValue(self.init_values[self.side]['Current_Value'], blockSignal=self.update_init_params)
         self.params_init.child('File').setValue(self.init_values[self.side]['File']['name'], blockSignal=self.update_init_params)
