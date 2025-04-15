@@ -1173,20 +1173,24 @@ class PlotWindow(QMainWindow):
         self.initialization(define_init_funcs=True)
 
 
+    def create_config_string(self):
+        data = {'parameters': self.spect_params,
+                'filters': self.filters,
+                'burst_size': self.burst_size,
+                'exclusion_filters': self.exclusion_filters}
+
+        return json.dumps(data, indent=4)
+        
+
     def save_config(self):
         """Saves the current configuration settings to a JSON file.
 
         This method exports the current spectrogram parameters, filters, and burst size to a specified file path.
         """
         path = self.params_config.child('Save').value()
-
-        data = {'parameters': self.spect_params,
-                'filters': self.filters,
-                'burst_size': self.burst_size,
-                'exclusion_filters': self.exclusion_filters}
         
         with open(path, 'w') as file:
-            json.dump(data, file, indent=4)
+            file.write(self.create_config_string())
         
         print(f"Data saved to {path}")
 
@@ -1551,7 +1555,8 @@ class PlotWindow(QMainWindow):
             'side': self.side,
             'burst_size': self.burst_size,
             'ne': self.ne_HFS if self.side == 'HFS' else self.ne_LFS,
-            'r': self.r_HFS if self.side == 'HFS' else self.r_LFS
+            'r': self.r_HFS if self.side == 'HFS' else self.r_LFS,
+            'config': self.create_config_string()
             }
 
 
