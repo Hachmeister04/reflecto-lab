@@ -960,6 +960,11 @@ class PlotWindow(QMainWindow):
         self.plot_profile.clear()
         self.plot_profile.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
         self.plot_profile.plot(r_LFS, ne_LFS * 1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
+
+        self.r_HFS = r_HFS # save for export
+        self.r_LFS = r_LFS
+        self.ne_HFS = ne_HFS
+        self.ne_LFS = ne_LFS
         
         self.plot_profile.setLabel('bottom', 'radius', units='m' if self.params_profiles.child('Coordinates').value() == 'R (m)' else '')
         self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
@@ -1534,7 +1539,20 @@ class PlotWindow(QMainWindow):
     
 
     def export_data(self):
-        pass # daniel
+        """Exports some useful information for Machine Learning analysis.
+
+        This method creates a h5 file to save some specific data.
+        """
+        # Create dictionary with already calculated data
+        data = {
+            'shot': self.shot,
+            'sweep': self.sweep,
+            'time_stamp': self.params_sweep.child('Timestamp').value(),
+            'side': self.side,
+            'burst_size': self.burst_size,
+            'ne': self.ne_HFS if self.side == 'HFS' else self.ne_LFS,
+            'r': self.r_HFS if self.side == 'HFS' else self.r_LFS
+            }
 
 
 
