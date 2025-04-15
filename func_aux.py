@@ -5,6 +5,8 @@ import numpy as np
 from functools import lru_cache
 from PyQt5.QtWidgets import QMessageBox
 from scipy.interpolate import RegularGridInterpolator
+from ipfnpytools.getsig import getsig, gettime
+from ipfnpytools.current_flattop import current_flattop
 
 try:
     from ipfnpytools.trz_to_rhop import fast_trz_to_rhop
@@ -120,3 +122,65 @@ def cached_full_profile_reconstruction(*args, **kwargs):
     kwargs['filters'] = json.loads(kwargs['filters'])
     return rpspy.full_profile_reconstruction(*args, **kwargs)
 
+
+def _get_signal_on_window(shot, shotfile, signal, window='all'):
+    """Internal function used by `get_average` and `get_percentiles` to load a timme signal on a given window"""
+    
+    try:
+        data = getsig(shot, shotfile, signal)
+        
+        if data is None:
+            return None
+
+        if window == 'all':
+            return gettime(shot, shotfile, signal), np.average(data)
+
+        else:
+            time = gettime(shot, shotfile, signal)
+            
+            if time is None:
+                return None
+
+            if window == 'flattop':
+                try:
+                    t0, t1 = current_flattop(shot)
+                except ValueError:
+                    return None
+                except AttributeError:
+                    return None
+            else:
+                t0, t1 = window
+
+            mask = (time > t0) & (time < t1)
+            return time[mask], data[mask]
+    except AttributeError:
+        return None
+
+def get_average(shot, shotfile, signal, window='all'):
+    """Compute the average of an AUG signal.
+    
+    Parameters
+    ----------
+    shot: int
+        Shot number
+    shotfile: str
+        Three-letter shotfile identifier
+    signal: str
+        Signal name to compute the average
+    window: {'all', 'flatttop'} or 2-float tuple
+        Window to compute the signal average. 
+        Choose 'all' for the entire signal;
+        or 'flattop' for automatic current flattop detection;
+        or provide a 2-valued tuple to manually set the window.
+        
+    Returns
+    -------
+    average: float
+        Signal average on the specified time window.
+    """
+    
+    _, data = _get_signal_on_window(shot=shot, shotfile=shotfile, signal=signal, window=window)
+    if data is None:
+        return None
+    else:
+        return np.nanmean(data)

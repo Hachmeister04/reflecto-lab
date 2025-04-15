@@ -13,6 +13,7 @@ from pyqtgraph.parametertree import Parameter, ParameterTree, interact, RunOptio
 import rpspy
 import func_aux
 import time
+import h5ify
 
 
 #TODO: Set limits of range view for the other graphs
@@ -1547,8 +1548,17 @@ class PlotWindow(QMainWindow):
 
         This method creates a h5 file to save some specific data.
         """
+
+        import rpspy
+        import numpy as np
+        from dataclasses import dataclass
+        from ipfnpytools.getsig import getsig, gettime
+        from ipfnpytools.current_flattop import current_flattop
+        import aug_sfutils as sf
+        from ipfnpytools.rhosep2 import rhosep2
+
         # Create dictionary with already calculated data
-        data = {
+        data_for_hdf = {
             'shot': self.shot,
             'sweep': self.sweep,
             'time_stamp': self.params_sweep.child('Timestamp').value(),
@@ -1558,6 +1568,110 @@ class PlotWindow(QMainWindow):
             'r': self.r_HFS if self.side == 'HFS' else self.r_LFS,
             'config': self.create_config_string()
             }
+        
+        first_sweep = self.sweep - int(self.burst_size / 2)
+        shot = self.shot
+        burst_size = self.burst_size
+        side = self.side
+        time_instant = self.params_sweep.child('Timestamp').value()
+        
+        # ------------------------------------
+        # Get linearized raw signals
+        # ------------------------------------
+
+        # Get shotfile directory
+        shotfile_dir = rpspy.get_default_shotfile_dir(shot)
+
+        # Get the sampling frequency
+        sampling_frequency = rpspy.get_sampling_frequency(shot, shotfile_dir)
+
+        data_for_hdf['sampling_frequency'] = sampling_frequency
+
+        # Get linearization reference from a previous "checkpoint"
+        shot_linearization, sweep_linearization = rpspy.get_linearization_reference(shot)
+        linearization_shotfile_dir = rpspy.get_default_shotfile_dir(shot_linearization)
+
+        # Use these bands
+        used_bands = [
+            ('K', 'real'), 
+            ('Ka', 'real'), 
+            ('Q', 'real'), 
+            ('V', 'complex')
+        ]
+
+        # ---------------------------------------
+        # Save raw signals in the dictionary
+        # ---------------------------------------
+
+        data_for_hdf['linearized_raw_signals'] = {}
+        for band_name, band_dtype in used_bands:
+            
+            # Get frequency curve -------------------------
+            frequency = rpspy.get_linearization(shot_linearization, sweep_linearization, band_name, shotfile_dir=linearization_shotfile_dir)
+    
+            # Get raw signals
+            signal = rpspy.get_band_signal(shot, shotfile_dir, band_name, side, band_dtype, first_sweep, self.burst_size)
+
+            # Linearize the signals ---------------------------------------
+            for i in range(burst_size):
+                frequency_linear, signal[i] = rpspy.linearize(frequency, signal[i])   
+                
+            # Save the signal in the dataclass -------------------------
+            amplitude = signal
+
+            # Get calibration parameters -------------------------
+            a, b = rpspy.get_A_B(shot, band_name, side)
+        
+            data_for_hdf['linearized_raw_signals'][band_name] = {
+                'frequency': frequency_linear,
+                'amplitude': amplitude,
+                'A': a,
+                'B': b,
+            }
+            
+        # -----------------------------------------
+        # Get equilibrium data
+        # -----------------------------------------
+
+        eq = sf.EQU(shot, diag='IDE')
+        if not eq.sf.status:
+            eq = sf.EQU(shot, diag='EQH')
+        
+        r = eq.Rmesh
+        z = eq.Zmesh
+        equilibrium_time = eq.time
+        equilibrium_time_index = np.argmin(np.abs(equilibrium_time - time_instant))
+        idx = equilibrium_time_index
+
+        print(eq.pfm.shape,eq.psi0.shape,eq.psix.shape)
+
+        rho = np.array(np.sqrt((eq.pfm[:,:,idx] - eq.psi0[idx])/(eq.psix[idx]-eq.psi0[idx])), dtype=np.float32)
+
+        
+
+        try:
+            rho_sep_2 = rhosep2(shot, time_instant, 'IDG')
+        except:
+            rho_sep_2 = rhosep2(shot, time_instant, 'GQH')
+
+        data_for_hdf['equilibrium'] = {
+            'R': r,
+            'Z': z,
+            'rho': rho,
+            'rho_sep_2': rho_sep_2,	
+        }
+    
+        # ---------------------------------------
+        # Get density average
+        # ---------------------------------------
+        density = func_aux.get_average(shot, 'DCN', 'H-1', window=(time_instant - 0.0005, time_instant + 0.0005))
+        density_offset = func_aux.get_average(shot, 'DCN', 'H-1', window=(-0.001, 0))
+
+        data_for_hdf['H1_density'] = density - density_offset
+
+        h5ify.save('test_export', data_for_hdf, mode='w')
+
+
 
 
 
