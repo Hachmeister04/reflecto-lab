@@ -366,6 +366,10 @@ class PlotWindow(QMainWindow):
             ]},
         ])
 
+        self.params_export = Parameter.create(name='Machine Learning', type='group', visible=False, children=[
+            {'name': 'Export data', 'type': 'action'}
+        ])
+
         self.param_tree.addParameters(self.params_file)
         self.param_tree.addParameters(self.params_init)
         self.param_tree.addParameters(self.params_config)
@@ -374,6 +378,7 @@ class PlotWindow(QMainWindow):
         self.param_tree.addParameters(self.params_fft)
         self.param_tree.addParameters(self.params_profiles)
         self.param_tree.addParameters(self.params_reconstruct)
+        self.param_tree.addParameters(self.params_export)
 
         # Connect the parameters to the functions-----------------------------------
 
@@ -421,6 +426,9 @@ class PlotWindow(QMainWindow):
 
         # Connect the button to reconstruct shot
         self.params_reconstruct.child('Reconstruct Shot').sigActivated.connect(self.request_reconstruct)
+
+        # Connect the export button to its function
+        self.params_export.child('Export data').sigActivated.connect(self.export_data)
 
 
     def update_shot(self):
@@ -474,6 +482,7 @@ class PlotWindow(QMainWindow):
         self.params_profiles.setOpts(visible=True)
         self.params_fft.setOpts(visible=True)
         self.params_reconstruct.setOpts(visible=True)
+        self.params_export.setOpts(visible=True)
 
         # Set attributes before the plots--------------------
 
@@ -1522,6 +1531,10 @@ class PlotWindow(QMainWindow):
         self.params_reconstruct.child('End Time').setOpts(enabled=True)
         self.params_reconstruct.child('Time Step').setOpts(enabled=True)
         self.params_reconstruct.child('Reconstruct Shot').setOpts(enabled=True)
+    
+
+    def export_data(self):
+        pass # daniel
 
 
 

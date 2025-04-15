@@ -86,6 +86,7 @@ def get_shot_from_path(path: str):
 def get_path_from_shot(shot: int):
     return f"/shares/experiments/aug-rawfiles/RTR/{shot//10}/{shot}"
 
+
 def show_warning():
     # Create a warning message box
     msg = QMessageBox()
