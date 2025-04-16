@@ -376,10 +376,10 @@ class PlotWindow(QMainWindow):
         self.param_tree.addParameters(self.params_config)
         self.param_tree.addParameters(self.params_detector)
         self.param_tree.addParameters(self.params_sweep)
+        self.param_tree.addParameters(self.params_export)
         self.param_tree.addParameters(self.params_fft)
         self.param_tree.addParameters(self.params_profiles)
         self.param_tree.addParameters(self.params_reconstruct)
-        self.param_tree.addParameters(self.params_export)
 
         # Connect the parameters to the functions-----------------------------------
 
