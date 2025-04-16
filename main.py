@@ -337,6 +337,10 @@ class PlotWindow(QMainWindow):
             {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
+        self.params_export = Parameter.create(name='Machine Learning', type='group', visible=False, children=[
+            {'name': 'Export HFS', 'type': 'action'},
+            {'name': 'Export LFS', 'type': 'action'}
+        ])
         self.params_fft = Parameter.create(name='Spectrogram', type='group', visible=False, children=[
             {'name': 'nperseg', 'type': 'float', 'value': DEFAULT_NPERSEG, 'decimals': DECIMALS_NPERSEG, 'delay': 0},
             {'name': 'noverlap', 'type': 'float', 'value': DEFAULT_NOVERLAP, 'decimals': DECIMALS_NOVERLAP, 'delay': 0},
@@ -365,10 +369,6 @@ class PlotWindow(QMainWindow):
                 {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
                 {'name': 'Public Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
             ]},
-        ])
-
-        self.params_export = Parameter.create(name='Machine Learning', type='group', visible=False, children=[
-            {'name': 'Export data', 'type': 'action'}
         ])
 
         self.param_tree.addParameters(self.params_file)
@@ -429,7 +429,8 @@ class PlotWindow(QMainWindow):
         self.params_reconstruct.child('Reconstruct Shot').sigActivated.connect(self.request_reconstruct)
 
         # Connect the export button to its function
-        self.params_export.child('Export data').sigActivated.connect(self.export_data)
+        self.params_export.child('Export HFS').sigActivated.connect(lambda: self.export_data('HFS'))
+        self.params_export.child('Export LFS').sigActivated.connect(lambda: self.export_data('LFS'))
 
 
     def update_shot(self):
@@ -1543,7 +1544,7 @@ class PlotWindow(QMainWindow):
         self.params_reconstruct.child('Reconstruct Shot').setOpts(enabled=True)
     
 
-    def export_data(self):
+    def export_data(self, side):
         """Exports some useful information for Machine Learning analysis.
 
         This method creates a h5 file to save some specific data.
@@ -1562,17 +1563,16 @@ class PlotWindow(QMainWindow):
             'shot': self.shot,
             'sweep': self.sweep,
             'time_stamp': self.params_sweep.child('Timestamp').value(),
-            'side': self.side,
+            'side': side,
             'burst_size': self.burst_size,
-            'ne': self.ne_HFS if self.side == 'HFS' else self.ne_LFS,
-            'r': self.r_HFS if self.side == 'HFS' else self.r_LFS,
+            'ne': self.ne_HFS if side == 'HFS' else self.ne_LFS,
+            'r': self.r_HFS if side == 'HFS' else self.r_LFS,
             'config': self.create_config_string()
             }
         
         first_sweep = self.sweep - int(self.burst_size / 2)
         shot = self.shot
         burst_size = self.burst_size
-        side = self.side
         time_instant = self.params_sweep.child('Timestamp').value()
         
         # ------------------------------------

@@ -5,8 +5,6 @@ import numpy as np
 from functools import lru_cache
 from PyQt5.QtWidgets import QMessageBox
 from scipy.interpolate import RegularGridInterpolator
-from ipfnpytools.getsig import getsig, gettime
-from ipfnpytools.current_flattop import current_flattop
 
 try:
     from ipfnpytools.trz_to_rhop import fast_trz_to_rhop
@@ -126,6 +124,9 @@ def cached_full_profile_reconstruction(*args, **kwargs):
 def _get_signal_on_window(shot, shotfile, signal, window='all'):
     """Internal function used by `get_average` and `get_percentiles` to load a timme signal on a given window"""
     
+    from ipfnpytools.getsig import getsig, gettime
+    from ipfnpytools.current_flattop import current_flattop
+
     try:
         data = getsig(shot, shotfile, signal)
         
