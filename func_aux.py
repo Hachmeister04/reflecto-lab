@@ -35,6 +35,9 @@ def cached_get_equilibrium_interpolator(shot):
     eq = sf.EQU(shot, diag='IDE')
     if not eq.sf.status:
         eq = sf.EQU(shot, diag='EQH')
+
+    print(eq)
+    print(eq.__dict__)
     
     rho_trz = RegularGridInterpolator(
         points=(

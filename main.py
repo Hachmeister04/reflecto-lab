@@ -1547,7 +1547,7 @@ class PlotWindow(QMainWindow):
     def export_data(self, side):
         """Exports some useful information for Machine Learning analysis.
 
-        This method creates a h5 file to save some specific data.
+        This method creates an h5 file to save some specific data.
         """
 
         import rpspy
@@ -1557,24 +1557,44 @@ class PlotWindow(QMainWindow):
         from ipfnpytools.current_flattop import current_flattop
         import aug_sfutils as sf
         from ipfnpytools.rhosep2 import rhosep2
-
-        # Create dictionary with already calculated data
-        data_for_hdf = {
-            'shot': self.shot,
-            'sweep': self.sweep,
-            'time_stamp': self.params_sweep.child('Timestamp').value(),
-            'side': side,
-            'burst_size': self.burst_size,
-            'ne': self.ne_HFS if side == 'HFS' else self.ne_LFS,
-            'r': self.r_HFS if side == 'HFS' else self.r_LFS,
-            'config': self.create_config_string()
-            }
+        from ipfnpytools.trhopz_to_r import trhopz_to_r
         
+        # Define aliases for the parameters
         first_sweep = self.sweep - int(self.burst_size / 2)
         shot = self.shot
         burst_size = self.burst_size
         time_instant = self.params_sweep.child('Timestamp').value()
-        
+        radius = self.r_HFS if side == 'HFS' else self.r_LFS,
+        ne = self.ne_HFS if side == 'HFS' else self.ne_LFS
+        f = rpspy.ne_to_f(ne),
+
+        # Create dictionary with already calculated data
+        data_for_hdf = {
+            'shot': self.shot,
+            'first_sweep': first_sweep,
+            'central_sweep': self.sweep,
+            'time_stamp': self.params_sweep.child('Timestamp').value(),
+            'side': side,
+            'burst_size': self.burst_size,
+            'ne': ne,
+            'frequency': f,
+            'tau': self.all_delay_HFS_beat_time if side == 'HFS' else self.all_delay_LFS_beat_time,
+            'r': radius,
+            'rho': func_aux.r_to_rho(time_instant, radius, shot, side),
+            'config': self.create_config_string(),
+            }
+
+        # ------------------------------------
+        # Frequency limits for each band
+        # ------------------------------------
+        frequency_limits = {}
+        for band in self.beat_frequencies[side]:
+            frequency_limits[band] = [
+                self.beat_frequencies[side][band][0], 
+                self.beat_frequencies[side][band][-1]
+            ] 
+        data_for_hdf['frequency_limits'] = frequency_limits
+
         # ------------------------------------
         # Get linearized raw signals
         # ------------------------------------
@@ -1590,6 +1610,10 @@ class PlotWindow(QMainWindow):
         # Get linearization reference from a previous "checkpoint"
         shot_linearization, sweep_linearization = rpspy.get_linearization_reference(shot)
         linearization_shotfile_dir = rpspy.get_default_shotfile_dir(shot_linearization)
+
+        # Save linearization reference
+        data_for_hdf['linearization_shot_reference'] = shot_linearization
+        data_for_hdf['linearization_sweep_reference'] = sweep_linearization 
 
         # Use these bands
         used_bands = [
@@ -1660,16 +1684,43 @@ class PlotWindow(QMainWindow):
             'rho': rho,
             'rho_sep_2': rho_sep_2,	
         }
+
+        # Radial location of the separatrices
+
+        zl = 0.14  # Antenna height on LFS
+        zh = 0.07  # Antenna height on HFS
+
+        r_sep2_hfs, _ = trhopz_to_r(time_instant, rho_sep_2, zh, eq_shotfile=eq)
+        _, r_sep2_lfs = trhopz_to_r(time_instant, rho_sep_2, zl, eq_shotfile=eq)
+
+        r_sep_hfs, _ = trhopz_to_r(time_instant, 1.0, zh, eq_shotfile=eq)
+        _, r_sep_lfs = trhopz_to_r(time_instant, 1.0, zl, eq_shotfile=eq)
+
+        data_for_hdf['equilibrium']['r_sep2_hfs'] = r_sep2_hfs
+        data_for_hdf['equilibrium']['r_sep2_lfs'] = r_sep2_lfs
+        data_for_hdf['equilibrium']['r_sep_hfs'] = r_sep_hfs
+        data_for_hdf['equilibrium']['r_sep_lfs'] = r_sep_lfs
+        data_for_hdf['equilibrium']['antena_height_hfs'] = zh
+        data_for_hdf['equilibrium']['antena_height_lfs'] = zl
     
         # ---------------------------------------
         # Get density average
         # ---------------------------------------
-        density = func_aux.get_average(shot, 'DCN', 'H-1', window=(time_instant - 0.0005, time_instant + 0.0005))
-        density_offset = func_aux.get_average(shot, 'DCN', 'H-1', window=(-0.001, 0))
+        for channel in ['H-0', 'H-1', 'H-2', 'H-4', 'H-5']:
+            
+            density = func_aux.get_average(shot, 'DCN', channel, window=(time_instant - 0.005, time_instant + 0.005))
+            density_offset = func_aux.get_average(shot, 'DCN', channel, window=(0, 0.01))
 
-        data_for_hdf['H1_density'] = density - density_offset
+            data_for_hdf[channel+'_density'] = density - density_offset
 
-        h5ify.save('test_export', data_for_hdf, mode='w')
+        # ---------------------------------------
+        # Save hdf5 
+        # ---------------------------------------
+
+        h5ify.save(
+            f'{shot}_{side}_{int(np.rint(time_instant*1e6)):08d}.h5',
+            # 'test_export.h5', 
+            data_for_hdf, mode='w')
 
 
 
