@@ -14,6 +14,7 @@ import rpspy
 import func_aux
 import time
 import h5ify
+import h5py
 
 
 #TODO: Set limits of range view for the other graphs
@@ -1590,8 +1591,8 @@ class PlotWindow(QMainWindow):
         frequency_limits = {}
         for band in self.beat_frequencies[side]:
             frequency_limits[band] = [
-                self.beat_frequencies[side][band][0], 
-                self.beat_frequencies[side][band][-1]
+                self.beat_frequencies[side][band][0][0], 
+                self.beat_frequencies[side][band][0][-1]
             ] 
         data_for_hdf['frequency_limits'] = frequency_limits
 
@@ -1690,6 +1691,10 @@ class PlotWindow(QMainWindow):
         zl = 0.14  # Antenna height on LFS
         zh = 0.07  # Antenna height on HFS
 
+
+        print(f"\n\n\nHHEEELLLLOOOO rho_sep_2: {rho_sep_2}\n\n")
+
+
         r_sep2_hfs, _ = trhopz_to_r(time_instant, rho_sep_2, zh, eq_shotfile=eq)
         _, r_sep2_lfs = trhopz_to_r(time_instant, rho_sep_2, zl, eq_shotfile=eq)
 
@@ -1700,8 +1705,10 @@ class PlotWindow(QMainWindow):
         data_for_hdf['equilibrium']['r_sep2_lfs'] = r_sep2_lfs
         data_for_hdf['equilibrium']['r_sep_hfs'] = r_sep_hfs
         data_for_hdf['equilibrium']['r_sep_lfs'] = r_sep_lfs
-        data_for_hdf['equilibrium']['antena_height_hfs'] = zh
-        data_for_hdf['equilibrium']['antena_height_lfs'] = zl
+        data_for_hdf['equilibrium']['antenna_height_hfs'] = zh
+        data_for_hdf['equilibrium']['antenna_height_lfs'] = zl
+        data_for_hdf['antenna_radius_hfs'] = rpspy.get_antenna_position('hfs')
+        data_for_hdf['antenna_radius_lfs'] = rpspy.get_antenna_position('lfs')
     
         # ---------------------------------------
         # Get density average
@@ -1711,17 +1718,154 @@ class PlotWindow(QMainWindow):
             density = func_aux.get_average(shot, 'DCN', channel, window=(time_instant - 0.005, time_instant + 0.005))
             density_offset = func_aux.get_average(shot, 'DCN', channel, window=(0, 0.01))
 
-            data_for_hdf[channel+'_density'] = density - density_offset
+            data_for_hdf[channel+'_density'] = float(density - density_offset)
 
+        # ---------------------------------------
+        # Check for objects in the dictionary
+        # ---------------------------------------
+
+        with open('log.txt', 'w') as f:
+            f.write(f"Objects in dictionary: {data_for_hdf}\n")
+
+        # def check_for_objects_in_dict(dictionary):
+
+        #     offending_key_path = []
+
+        #     try:
+        #         for key, value in dictionary.items():
+        #             current_key_path = key
+        #             if isinstance(value, dict):
+        #                 try:
+        #                     check_for_objects_in_dict(value)
+        #                 except TypeError:
+        #                     offending_key_path.append(key)
+        #                     raise TypeError(f"Object found in dictionary at key: {key}")
+        #             elif isinstance(value, object):
+        #                 offending_key_path.append(key)
+        #                 raise TypeError(f"Object found in dictionary at key: {key}")
+        #     except TypeError:
+        #         return offending_key_path
+                    
+
+        # bastard = check_for_objects_in_dict(data_for_hdf)
+
+        # print(f"Objects in dictionary: {bastard}")
         # ---------------------------------------
         # Save hdf5 
         # ---------------------------------------
 
-        h5ify.save(
-            f'{shot}_{side}_{int(np.rint(time_instant*1e6)):08d}.h5',
-            # 'test_export.h5', 
-            data_for_hdf, mode='w')
+        filename = f'{shot}_{side}_{int(np.rint(time_instant*1e6)):08d}.h5'
 
+        h5ify.save(
+            filename,
+            data_for_hdf, mode='w')
+        
+        # ---------------------------------------
+        # Add metadata
+        # ---------------------------------------
+
+        with h5py.File(filename, 'a') as f:
+
+            for i in ['H-0', 'H-1', 'H-2', 'H-4', 'H-5']:
+                f[i + '_density'].attrs.create('unit', 'meter^-2')
+                f[i + '_density'].attrs.create('description', f'Line-integrated density from the {i} interferometer')
+
+            f['burst_size'].attrs.create('unit', 'NA')
+            f['burst_size'].attrs.create('description', 'Number of sweeps in the burst')
+
+            f['shot'].attrs.create('unit', 'NA')
+            f['shot'].attrs.create('description', 'Shot number')
+
+            f['first_sweep'].attrs.create('unit', 'NA')
+            f['first_sweep'].attrs.create('description', 'First sweep of the burst')
+            f['central_sweep'].attrs.create('unit', 'NA')
+            f['central_sweep'].attrs.create('description', 'Central sweep of the burst')
+
+            f['time_stamp'].attrs.create('unit', 's')
+            f['time_stamp'].attrs.create('description', 'Timestamp of the central sweep')
+
+            f['side'].attrs.create('unit', 'NA')
+            f['side'].attrs.create('description', 'Side of the antenna (HFS or LFS)')
+
+            f['rho'].attrs.create('unit', 'NA')
+            f['rho'].attrs.create('description', 'Normalized poloidal flux of the density profile')
+
+            f['r'].attrs.create('unit', 'm')
+            f['r'].attrs.create('description', 'Radial position of the density profile')
+
+            f['ne'].attrs.create('unit', 'm^-3')
+            f['ne'].attrs.create('description', 'Density profile')
+
+            f['tau'].attrs.create('unit', 's')
+            f['tau'].attrs.create('description', 'Group delay for each frequency in "frequency"')
+
+            f['frequency'].attrs.create('unit', 'Hz')
+            f['frequency'].attrs.create('description', 'Frequency axis for the group delay "tau"')
+
+            f['config'].attrs.create('unit', 'NA')
+            f['config'].attrs.create('description', 'JSON Configuration file used by reflectolab')
+
+            f['antenna_radius_hfs'].attrs.create('unit', 'm')
+            f['antenna_radius_hfs'].attrs.create('description', 'Antenna radius on HFS')
+
+            f['antenna_radius_lfs'].attrs.create('unit', 'm')
+            f['antenna_radius_lfs'].attrs.create('description', 'Antenna radius on LFS')
+
+            f['linearization_shot_reference'].attrs.create('unit', 'NA')
+            f['linearization_shot_reference'].attrs.create('description', 'Shot number of the linearization reference')
+            f['linearization_sweep_reference'].attrs.create('unit', 'NA')
+            f['linearization_sweep_reference'].attrs.create('description', 'Sweep number of the linearization reference')
+            f['sampling_frequency'].attrs.create('unit', 'Hz')
+            f['sampling_frequency'].attrs.create('description', 'Sampling frequency of the system')
+
+            for band in ['K', 'Ka', 'Q', 'V']:
+                f['linearized_raw_signals'][band]['frequency'].attrs.create('unit', 'Hz')
+                f['linearized_raw_signals'][band]['frequency'].attrs.create('description', 'Frequency of the linearized raw signal')
+                f['linearized_raw_signals'][band]['amplitude'].attrs.create('unit', 'NA')
+                f['linearized_raw_signals'][band]['amplitude'].attrs.create('description', 'Amplitude of the linearized raw signal')
+                f['linearized_raw_signals'][band]['A'].attrs.create('unit', 'second')
+                f['linearized_raw_signals'][band]['A'].attrs.create('description', f'Calibration parameter A')
+                f['linearized_raw_signals'][band]['B'].attrs.create('unit', 'second')
+                f['linearized_raw_signals'][band]['B'].attrs.create('description', f'Calibration parameter B')
+         
+            f['equilibrium']['R'].attrs.create('unit', 'm')
+            f['equilibrium']['R'].attrs.create('description', 'R coordinate of the equilibrium')
+            f['equilibrium']['Z'].attrs.create('unit', 'm')
+            f['equilibrium']['Z'].attrs.create('description', 'Z coordinate of the equilibrium')
+            f['equilibrium']['rho'].attrs.create('unit', 'NA')
+            f['equilibrium']['rho'].attrs.create('description', 'Normalized poloidal flux of the equilibrium')
+            f['equilibrium']['rho_sep_2'].attrs.create('unit', 'NA')
+            f['equilibrium']['rho_sep_2'].attrs.create('description', 'Normalized poloidal flux of the secondary separatrix')
+
+            f['equilibrium']['r_sep2_hfs'].attrs.create('unit', 'm')
+            f['equilibrium']['r_sep2_hfs'].attrs.create('description', 'Radial position of the secondary separatrix on HFS, antenna height')
+
+            f['equilibrium']['r_sep2_lfs'].attrs.create('unit', 'm')
+            f['equilibrium']['r_sep2_lfs'].attrs.create('description', 'Radial position of the secondary separatrix on LFS, antenna height')
+
+            f['equilibrium']['r_sep_hfs'].attrs.create('unit', 'm')
+            f['equilibrium']['r_sep_hfs'].attrs.create('description', 'Radial position of the separatrix on HFS, antenna height')
+
+            f['equilibrium']['r_sep_lfs'].attrs.create('unit', 'm')
+            f['equilibrium']['r_sep_lfs'].attrs.create('description', 'Radial position of the separatrix on LFS, antenna height')
+   
+            f['equilibrium']['antenna_height_hfs'].attrs.create('unit', 'm')
+            f['equilibrium']['antenna_height_hfs'].attrs.create('description', 'Antenna height on HFS')
+
+            f['equilibrium']['antenna_height_lfs'].attrs.create('unit', 'm')
+            f['equilibrium']['antenna_height_lfs'].attrs.create('description', 'Antenna height on LFS')
+
+            f['frequency_limits'].attrs.create('unit', 'Hz')
+            f['frequency_limits'].attrs.create(
+                'description', 
+                'Frequency limits for each band. '+\
+                'Group delay values for frequencies outside these limits are interpolated.')
+
+            for band in ['K', 'Ka', 'Q', 'V']:
+                f['frequency_limits'][band].attrs.create('unit', 'Hz')
+                f['frequency_limits'][band].attrs.create('description', f'Frequency limits for the {band} band')
+
+            
 
 
 

@@ -1,6 +1,9 @@
 # Folder with shot reconstructions
 reconstruction_shots/
 
+# HDF5 files
+*.h5
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
