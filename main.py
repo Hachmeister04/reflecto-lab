@@ -968,6 +968,9 @@ class PlotWindow(QMainWindow):
         self.r_LFS = r_LFS
         self.ne_HFS = ne_HFS
         self.ne_LFS = ne_LFS
+        self.tau_HFS = group_delay_HFS_y
+        self.tau_LFS = group_delay_LFS_y
+
         
         self.plot_profile.setLabel('bottom', 'radius', units='m' if self.params_profiles.child('Coordinates').value() == 'R (m)' else '')
         self.plot_profile.setLabel('left', 'density', units='1e19 m^-3')
@@ -1579,7 +1582,7 @@ class PlotWindow(QMainWindow):
             'burst_size': self.burst_size,
             'ne': ne,
             'frequency': f,
-            'tau': self.all_delay_HFS_beat_time if side == 'HFS' else self.all_delay_LFS_beat_time,
+            'tau': self.tau_HFS if side == 'HFS' else self.tau_LFS,
             'r': radius,
             'rho': func_aux.r_to_rho(time_instant, radius, shot, side),
             'config': self.create_config_string(),
