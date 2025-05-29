@@ -107,12 +107,12 @@ def show_warning():
 #Cached versions of functions
 @lru_cache(maxsize=50)
 def cached_get_linearization(*args, **kwargs):
-    return rpspy.get_linearization(*args, **kwargs)
+    return rpspy.get_linearization(*args, **kwargs, use_lookup_table=True)
 
 
 @lru_cache(maxsize=50)
 def cached_get_auto_linearization_from_shares(shot, band):
-    return rpspy.get_linearization(shot, REFERENCE_SWEEP, band)
+    return rpspy.get_linearization(shot, REFERENCE_SWEEP, band, use_lookup_table=True)
 
 
 @lru_cache(maxsize=100)
