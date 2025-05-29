@@ -37,6 +37,9 @@ MIN_NPERSEG = 10
 MAX_NFFT = np.inf
 DEFAULT_BURST_SIZE = 1
 
+# Linearization Params
+DEFAULT_LINEARIZATION_SWEEP = int(2 / 35e-6)
+
 # Filter Params
 DEFAULT_FILTER_LOW = 0  # Hz
 DEFAULT_FILTER_HIGH = 10 * 1e6  # Hz
@@ -1570,20 +1573,20 @@ class Threaded(QObject):
         for side in ['HFS', 'LFS']:
             for band in ['K', 'Ka', 'Q', 'V']:
                 if application.spect_params[side][band]['subtract background']:
-                    subtract_background_on_bands.append(f"{band}-{side}".capitalize())
+                    subtract_background_on_bands.append(f"{band}-{side}")
 
         subtract_dispersion_on_bands = []
         for side in ['HFS', 'LFS']:
             for band in ['K', 'Ka', 'Q', 'V']:
                 if application.spect_params[side][band]['subtract dispersion']:
-                    subtract_dispersion_on_bands.append(f"{band}-{side}".capitalize())
+                    subtract_dispersion_on_bands.append(f"{band}-{side}")
 
         rpspy.full_profile_reconstruction(
             shot=application.shot, 
             destination_dir='reconstruction_shots', 
             shotfile_dir=application.file_path, 
             linearization_shotfile_dir=application.file_path, 
-            sweep_linearization=int(2/35e-6), 
+            sweep_linearization=DEFAULT_LINEARIZATION_SWEEP, 
             shot_linearization=application.shot,
             spectrogram_options=spectrogram_options,
             filters=application.filters,
@@ -1598,8 +1601,8 @@ class Threaded(QObject):
             write_private_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             return_profiles=False,
-            initialization_lfs=lambda time: self.get_init('LFS', time),
-            initialization_hfs=lambda time: self.get_init('HFS', time),
+            initialization_lfs=lambda time: application.get_init('LFS', time),
+            initialization_hfs=lambda time: application.get_init('HFS', time),
         )
         self.finished_signal.emit()
 
