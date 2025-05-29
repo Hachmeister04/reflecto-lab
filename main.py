@@ -39,6 +39,9 @@ MIN_NPERSEG = 10
 MAX_NFFT = np.inf
 DEFAULT_BURST_SIZE = 1
 
+# Linearization Params
+DEFAULT_LINEARIZATION_SWEEP = int(2 / 35e-6)
+
 # Filter Params
 DEFAULT_FILTER_LOW = 0  # Hz
 DEFAULT_FILTER_HIGH = 10 * 1e6  # Hz
@@ -1613,8 +1616,8 @@ class PlotWindow(QMainWindow):
         data_for_hdf['sampling_frequency'] = sampling_frequency
 
         # Get linearization reference from a previous "checkpoint"
-        shot_linearization, sweep_linearization = rpspy.get_linearization_reference(shot)
-        linearization_shotfile_dir = rpspy.get_default_shotfile_dir(shot_linearization)
+        shot_linearization, sweep_linearization = shot, DEFAULT_LINEARIZATION_SWEEP
+        linearization_shotfile_dir = shotfile_dir
 
         # Save linearization reference
         data_for_hdf['linearization_shot_reference'] = shot_linearization
@@ -1636,7 +1639,7 @@ class PlotWindow(QMainWindow):
         for band_name, band_dtype in used_bands:
             
             # Get frequency curve -------------------------
-            frequency = rpspy.get_linearization(shot_linearization, sweep_linearization, band_name, shotfile_dir=linearization_shotfile_dir)
+            frequency = rpspy.get_linearization(shot_linearization, sweep_linearization, band_name, shotfile_dir=linearization_shotfile_dir, use_lookup_table=True)
     
             # Get raw signals
             signal = rpspy.get_band_signal(shot, shotfile_dir, band_name, side, band_dtype, first_sweep, self.burst_size)
@@ -1931,7 +1934,7 @@ class Threaded(QObject):
             destination_dir='reconstruction_shots', 
             shotfile_dir=application.file_path, 
             linearization_shotfile_dir=application.file_path, 
-            sweep_linearization=int(2/35e-6), 
+            sweep_linearization=DEFAULT_LINEARIZATION_SWEEP, 
             shot_linearization=application.shot,
             spectrogram_options=spectrogram_options,
             filters=application.filters,
