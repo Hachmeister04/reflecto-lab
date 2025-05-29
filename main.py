@@ -1921,13 +1921,13 @@ class Threaded(QObject):
         for side in ['HFS', 'LFS']:
             for band in ['K', 'Ka', 'Q', 'V']:
                 if application.spect_params[side][band]['subtract background']:
-                    subtract_background_on_bands.append(f"{band}-{side}".capitalize())
+                    subtract_background_on_bands.append(f"{band}-{side}")
 
         subtract_dispersion_on_bands = []
         for side in ['HFS', 'LFS']:
             for band in ['K', 'Ka', 'Q', 'V']:
                 if application.spect_params[side][band]['subtract dispersion']:
-                    subtract_dispersion_on_bands.append(f"{band}-{side}".capitalize())
+                    subtract_dispersion_on_bands.append(f"{band}-{side}")
 
         rpspy.full_profile_reconstruction(
             shot=application.shot, 
@@ -1949,8 +1949,8 @@ class Threaded(QObject):
             write_private_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             return_profiles=False,
-            initialization_lfs=lambda time: self.get_init('LFS', time),
-            initialization_hfs=lambda time: self.get_init('HFS', time),
+            initialization_lfs=lambda time: application.get_init('LFS', time),
+            initialization_hfs=lambda time: application.get_init('HFS', time),
         )
         self.finished_signal.emit()
 
