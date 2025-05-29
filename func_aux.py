@@ -16,6 +16,9 @@ except ImportError:
     AUG_MODE = False
 
 
+REFERENCE_SWEEP = int(2/35e-6)
+
+
 @lru_cache(maxsize=5)
 def cached_get_equilibrium_interpolator(shot):
     """Convert time, rho poloidal, and z coordinates to R.
@@ -108,13 +111,12 @@ def show_warning():
 #Cached versions of functions
 @lru_cache(maxsize=50)
 def cached_get_linearization(*args, **kwargs):
-    return rpspy.get_linearization(*args, **kwargs)
+    return rpspy.get_linearization(*args, **kwargs, use_lookup_table=True)
 
 
 @lru_cache(maxsize=50)
 def cached_get_auto_linearization_from_shares(shot, band):
-    reference_shot, reference_sweep = rpspy.get_linearization_reference(shot)
-    return rpspy.get_linearization(reference_shot, reference_sweep, band)
+    return rpspy.get_linearization(shot, REFERENCE_SWEEP, band, use_lookup_table=True)
 
 
 @lru_cache(maxsize=100)
