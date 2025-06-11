@@ -360,9 +360,9 @@ class PlotWindow(QMainWindow):
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'Reconstruct Shot', 'type': 'action'},
             {'name': 'Reconstruction Output', 'title': 'Reconstruction Output', 'type': 'group', 'children': [
-                {'name': 'Dumpfile', 'type': 'bool', 'value': True, 'delay': 0},
                 {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
                 {'name': 'Public Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
+                {'name': 'HDF5', 'type': 'bool', 'value': True, 'delay': 0},
             ]},
         ])
 
@@ -1597,9 +1597,10 @@ class Threaded(QObject):
             end_time=application.params_reconstruct.child('End Time').value(), 
             time_step=application.params_reconstruct.child('Time Step').value(),
             burst=int(application.params_fft.child('burst size (odd)').value()), 
-            write_dump=application.params_reconstruct.child('Reconstruction Output').child('Dumpfile').value(),
+            write_dump=False,
             write_private_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=application.params_reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
+            write_hdf5=application.params_reconstruct.child('Reconstruction Output').child('HDF5').value(),
             return_profiles=False,
             initialization_lfs=lambda time: application.get_init('LFS', time),
             initialization_hfs=lambda time: application.get_init('HFS', time),
