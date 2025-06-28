@@ -290,7 +290,7 @@ class PlotWindow(QMainWindow):
         self.plot_spect = pg.PlotWidget(title="Spectrogram")
         self.dock_spect.addWidget(self.plot_spect)
 
-        self.plot_beatf = pg.PlotWidget(title="Beat Frequencies")
+        self.plot_beatf = pg.PlotWidget(title="Group Delay")
         self.dock_beatf.addWidget(self.plot_beatf)
 
         self.plot_profile = pg.PlotWidget(title="Profile")
@@ -1410,8 +1410,8 @@ class PlotWindow(QMainWindow):
             elif sender == self.params_fft.child('burst size (odd)'):
                 for side in self.spect_params:
                     for band in self.spect_params[side]:
-                        if not (side == self.side and band == self.band):
-                            self.calculate_background(band, side)
+                        #if not (side == self.side and band == self.band):
+                        self.calculate_background(band, side)
                 self.update_fft()
                 self.update_all_beatf()
                 
