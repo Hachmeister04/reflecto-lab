@@ -1,4 +1,5 @@
 import sys
+import os
 import numpy as np
 import json
 from scipy.signal import spectrogram
@@ -1762,6 +1763,12 @@ class PlotWindow(QMainWindow):
         # ---------------------------------------
 
         filename = f'{shot}_{side}_{int(np.rint(time_instant*1e6)):08d}.h5'
+
+        # To prevent error when saving repeated files, check if file already exists
+        n = 1
+        while os.path.exists(filename):
+            filename = f'{shot}_{side}_{int(np.rint(time_instant*1e6)):08d} ({n}).h5'
+            n += 1
 
         h5ify.save(
             filename,
