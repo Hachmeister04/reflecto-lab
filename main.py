@@ -481,6 +481,10 @@ class PlotWindow(QMainWindow):
         self.params_fft.setOpts(visible=True)
         self.params_reconstruct.setOpts(visible=True)
 
+        # Except parameters that default to hidden states ----------------------------
+        self.params_reconstruct.child('Density Cutoff').setOpts(readonly=True)
+        self.params_reconstruct.child('Density Cutoff').setOpts(visible=False) 
+
         # Set attributes before the plots--------------------
 
         self.band = self.params_detector.child('Band').value()
