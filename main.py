@@ -48,6 +48,7 @@ DEFAULT_FILTER_HIGH = 10 * 1e6  # Hz
 DEFAULT_START_TIME = 0  # s
 DEFAULT_END_TIME = 10  # s
 DEFAULT_TIMESTEP = 1e-3  # s
+DEFAULT_DENSITY_CUTOFF = 6e19  # m^-3
 
 # Plot Params
 DECIMALS_SWEEP_NUM = 6
@@ -358,6 +359,8 @@ class PlotWindow(QMainWindow):
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True, 'delay': 0},
+            {'name': 'Apply Custom Density Cutoff', 'type': 'bool', 'value': False, 'delay': 0},
+            {'name': 'Density Cutoff', 'type': 'float', 'value': DEFAULT_DENSITY_CUTOFF, 'suffix': 'm^-3', 'siPrefix': True, 'delay': 0},
             {'name': 'Reconstruct Shot', 'type': 'action'},
             {'name': 'Reconstruction Output', 'title': 'Reconstruction Output', 'type': 'group', 'children': [
                 {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
@@ -421,6 +424,9 @@ class PlotWindow(QMainWindow):
 
         # Connect the button to reconstruct shot
         self.params_reconstruct.child('Reconstruct Shot').sigActivated.connect(self.request_reconstruct)
+
+        # Connect the density cutoff parameters
+        self.params_reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self.update_cutoff_params)
 
 
     def update_shot(self):
@@ -1123,6 +1129,17 @@ class PlotWindow(QMainWindow):
 
 # Parameters ---------------------------------------------------------------------------------------------------------------------
 
+    def update_cutoff_params(self):
+        sender = self.sender()
+
+        if sender.value():
+            self.params_reconstruct.child('Cut-off Frequency').setOpts(readonly=False)
+            self.params_reconstruct.child('Cut-off Frequency').setOpts(visible=True)
+        else:
+            self.params_reconstruct.child('Cut-off Frequency').setOpts(readonly=True)
+            self.params_reconstruct.child('Cut-off Frequency').setOpts(visible=False) 
+            
+
     def update_init_params(self):
         sender = self.sender()
 
@@ -1604,6 +1621,7 @@ class Threaded(QObject):
             return_profiles=False,
             initialization_lfs=lambda time: application.get_init('LFS', time),
             initialization_hfs=lambda time: application.get_init('HFS', time),
+            density_cutoff=application.params_reconstruct.child('Density Cutoff').value() if application.params_reconstruct.child('Apply Custom Density Cutoff').value() else None,
         )
         self.finished_signal.emit()
 
