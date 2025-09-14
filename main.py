@@ -360,7 +360,7 @@ class PlotWindow(QMainWindow):
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'Apply Custom Density Cutoff', 'type': 'bool', 'value': False, 'delay': 0},
-            {'name': 'Density Cutoff', 'type': 'float', 'value': DEFAULT_DENSITY_CUTOFF, 'suffix': 'm^-3', 'siPrefix': True, 'delay': 0},
+            {'name': 'Density Cutoff', 'type': 'float', 'value': DEFAULT_DENSITY_CUTOFF, 'suffix': 'm^-3', 'siPrefix': False, 'delay': 0},
             {'name': 'Reconstruct Shot', 'type': 'action'},
             {'name': 'Reconstruction Output', 'title': 'Reconstruction Output', 'type': 'group', 'children': [
                 {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
