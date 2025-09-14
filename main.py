@@ -1133,11 +1133,11 @@ class PlotWindow(QMainWindow):
         sender = self.sender()
 
         if sender.value():
-            self.params_reconstruct.child('Cut-off Frequency').setOpts(readonly=False)
-            self.params_reconstruct.child('Cut-off Frequency').setOpts(visible=True)
+            self.params_reconstruct.child('Density Cutoff').setOpts(readonly=False)
+            self.params_reconstruct.child('Density Cutoff').setOpts(visible=True)
         else:
-            self.params_reconstruct.child('Cut-off Frequency').setOpts(readonly=True)
-            self.params_reconstruct.child('Cut-off Frequency').setOpts(visible=False) 
+            self.params_reconstruct.child('Density Cutoff').setOpts(readonly=True)
+            self.params_reconstruct.child('Density Cutoff').setOpts(visible=False) 
             
 
     def update_init_params(self):
