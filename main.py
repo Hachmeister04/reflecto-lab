@@ -616,7 +616,7 @@ class PlotWindow(QMainWindow):
         self.data -= 2**11 if self.signal_type == 'real' else (2**11 + 1j * 2**11)
 
 
-        self.x_data = func_aux.cached_get_auto_linearization_from_shares(self.shot, self.band)
+        self.x_data = func_aux.cached_get_auto_linearization_from_shares(self.shot, self.band, self.sweep)
             
         print("x_data")
         print(self.x_data)
