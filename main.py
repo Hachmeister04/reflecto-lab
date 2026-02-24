@@ -616,7 +616,9 @@ class PlotWindow(QMainWindow):
         self.data -= 2**11 if self.signal_type == 'real' else (2**11 + 1j * 2**11)
 
 
-        self.x_data = func_aux.cached_get_auto_linearization_from_shares(self.shot, self.band)
+        self.x_data = func_aux.cached_get_auto_linearization_from_shares(self.shot, self.band, self.sweep)
+
+        print("sweep:", self.sweep)
             
         print("x_data")
         print(self.x_data)
@@ -996,7 +998,7 @@ class PlotWindow(QMainWindow):
         # Retrieving burst signal based on the selected parameters
         burst = rpspy.get_band_signal(self.shot, self.file_path, band, side, signal_type, sweep - burst_size // 2, burst_size)
 
-        f = func_aux.cached_get_auto_linearization_from_shares(self.shot, band)
+        f = func_aux.cached_get_auto_linearization_from_shares(self.shot, band, sweep)
         
         print("f")
         print(f)

@@ -110,9 +110,9 @@ def cached_get_linearization(*args, **kwargs):
     return rpspy.get_linearization(*args, **kwargs, use_lookup_table=True)
 
 
-@lru_cache(maxsize=50)
-def cached_get_auto_linearization_from_shares(shot, band):
-    return rpspy.get_linearization(shot, REFERENCE_SWEEP, band, use_lookup_table=True)
+@lru_cache(maxsize=500)
+def cached_get_auto_linearization_from_shares(shot, band, sweep):
+    return rpspy.get_linearization(shot, sweep, band, use_lookup_table=True)
 
 
 @lru_cache(maxsize=100)
