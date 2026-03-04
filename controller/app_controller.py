@@ -542,14 +542,14 @@ class AppController(QObject):
 
         # If HDF5 is enabled, let the user choose the output directory and filename
         if write_hdf5:
-            file_path, _ = QFileDialog.getSaveFileName(
+            hdf5_destination_path, _ = QFileDialog.getSaveFileName(
                 self.view, 'Save HDF5 File', '', 'HDF5 Files (*.h5)',
             )
-            if not file_path:
+            if not hdf5_destination_path:
                 return  # User cancelled — abort reconstruction
-            destination_dir = os.path.dirname(file_path)
+  
         else:
-            destination_dir = None
+            hdf5_destination_path = None
 
         params = ReconstructionInput(
             shot=m.shot,
@@ -566,7 +566,7 @@ class AppController(QObject):
             write_private_shotfile=p.reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=p.reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             write_hdf5=write_hdf5,
-            destination_dir=destination_dir,
+            hdf5_destination_path=hdf5_destination_path,
             get_init_lfs=lambda time: m.get_init('LFS', time),
             get_init_hfs=lambda time: m.get_init('HFS', time),
         )
