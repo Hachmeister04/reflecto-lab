@@ -1,6 +1,7 @@
+import os
 import logging
 import numpy as np
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QFileDialog
 from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
 
 from constants import (
@@ -537,6 +538,19 @@ class AppController(QObject):
         m = self.model
         p = self.panels
 
+        write_hdf5 = p.reconstruct.child('Reconstruction Output').child('HDF5').value()
+
+        # If HDF5 is enabled, let the user choose the output directory and filename
+        if write_hdf5:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self.view, 'Save HDF5 File', '', 'HDF5 Files (*.h5)',
+            )
+            if not file_path:
+                return  # User cancelled — abort reconstruction
+            destination_dir = os.path.dirname(file_path)
+        else:
+            destination_dir = None
+
         params = ReconstructionInput(
             shot=m.shot,
             file_path=m.file_path,
@@ -551,7 +565,8 @@ class AppController(QObject):
             density_cutoff=p.reconstruct.child('Density Cutoff').value(),
             write_private_shotfile=p.reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=p.reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
-            write_hdf5=p.reconstruct.child('Reconstruction Output').child('HDF5').value(),
+            write_hdf5=write_hdf5,
+            destination_dir=destination_dir,
             get_init_lfs=lambda time: m.get_init('LFS', time),
             get_init_hfs=lambda time: m.get_init('HFS', time),
         )

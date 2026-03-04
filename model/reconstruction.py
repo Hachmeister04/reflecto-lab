@@ -61,7 +61,7 @@ class ReconstructionWorker(QObject):
 
         rpspy.full_profile_reconstruction(
             shot=params.shot,
-            destination_dir='reconstruction_shots',
+            destination_dir=params.destination_dir,
             shotfile_dir=params.file_path,
             linearization_shotfile_dir=params.file_path,
             sweep_linearization=DEFAULT_LINEARIZATION_SWEEP,

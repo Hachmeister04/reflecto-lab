@@ -142,5 +142,6 @@ class ReconstructionInput:
     write_private_shotfile: bool = False
     write_public_shotfile: bool = False
     write_hdf5: bool = True
+    destination_dir: Optional[str] = None
     get_init_hfs: object = None
     get_init_lfs: object = None
