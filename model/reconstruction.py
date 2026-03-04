@@ -61,7 +61,6 @@ class ReconstructionWorker(QObject):
 
         rpspy.full_profile_reconstruction(
             shot=params.shot,
-            destination_dir=params.destination_dir,
             shotfile_dir=params.file_path,
             linearization_shotfile_dir=params.file_path,
             sweep_linearization=DEFAULT_LINEARIZATION_SWEEP,
@@ -79,6 +78,7 @@ class ReconstructionWorker(QObject):
             write_private_shotfile=params.write_private_shotfile,
             write_public_shotfile=params.write_public_shotfile,
             write_hdf5=params.write_hdf5,
+            hdf5_destination_path=params.destination_dir,
             return_profiles=False,
             initialization_lfs=params.get_init_lfs,
             initialization_hfs=params.get_init_hfs,
