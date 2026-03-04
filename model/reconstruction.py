@@ -77,7 +77,7 @@ class ReconstructionWorker(QObject):
             write_private_shotfile=params.write_private_shotfile,
             write_public_shotfile=params.write_public_shotfile,
             write_hdf5=params.write_hdf5,
-            hdf5_destination_path=params.destination_dir,
+            hdf5_destination_path=params.hdf5_destination_path,
             return_profiles=False,
             initialization_lfs=params.get_init_lfs,
             initialization_hfs=params.get_init_hfs,
