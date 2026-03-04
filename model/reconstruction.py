@@ -74,7 +74,6 @@ class ReconstructionWorker(QObject):
             end_time=params.end_time,
             time_step=params.time_step,
             burst=params.burst_size,
-            write_dump=False,
             write_private_shotfile=params.write_private_shotfile,
             write_public_shotfile=params.write_public_shotfile,
             write_hdf5=params.write_hdf5,
