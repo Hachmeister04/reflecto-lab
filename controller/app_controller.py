@@ -547,6 +547,8 @@ class AppController(QObject):
             )
             if not hdf5_destination_path:
                 return  # User cancelled — abort reconstruction
+            if not hdf5_destination_path.endswith('.h5'):
+                hdf5_destination_path += '.h5'
   
         else:
             hdf5_destination_path = None
