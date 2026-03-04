@@ -8,7 +8,7 @@ from constants import (
     DECIMALS_EXCLUSIONS,
 )
 from model.shot_model import ShotModel
-from model.state import ReconstructionInput
+from model.state import ReconstructionInput, ExclusionRange
 from model.reconstruction import ReconstructionWorker
 from view.main_window import MainWindowView
 from view.parameter_panels import ParameterPanels
@@ -50,54 +50,78 @@ class AppController(QObject):
         self._suppress_fft_updates = False
         self._suppress_exclusions = False
 
-        # Wire signals
+        # Wire signals — store lambda refs so they can be used with blockSignal
         self._connect_signals()
 
     def _connect_signals(self):
-        """All signal connections in one place."""
+        """All signal connections in one place.
+
+        Lambdas are stored as attributes so the same object can be passed
+        to both connect() and blockSignal().
+        """
         p = self.panels
 
         # File/shot
-        p.file.child('Open').sigValueChanged.connect(lambda: self._on_shot_changed('open'))
-        p.file.child('Shot').sigValueChanged.connect(lambda: self._on_shot_changed('shot'))
+        self._h_shot_open = lambda: self._on_shot_changed('open')
+        self._h_shot_number = lambda: self._on_shot_changed('shot')
+        p.file.child('Open').sigValueChanged.connect(self._h_shot_open)
+        p.file.child('Shot').sigValueChanged.connect(self._h_shot_number)
 
         # Initialization
-        p.init.child('Type').sigValueChanged.connect(lambda: self._on_init_changed('type'))
-        p.init.child('Value').sigValueChanged.connect(lambda: self._on_init_changed('value'))
-        p.init.child('File').sigValueChanged.connect(lambda: self._on_init_changed('file'))
+        self._h_init_type = lambda: self._on_init_changed('type')
+        self._h_init_value = lambda: self._on_init_changed('value')
+        self._h_init_file = lambda: self._on_init_changed('file')
+        p.init.child('Type').sigValueChanged.connect(self._h_init_type)
+        p.init.child('Value').sigValueChanged.connect(self._h_init_value)
+        p.init.child('File').sigValueChanged.connect(self._h_init_file)
 
         # Config
         p.config.child('Save').sigValueChanged.connect(self._on_save_config)
         p.config.child('Load').sigValueChanged.connect(self._on_load_config)
 
         # Detector
-        p.detector.child('Band').sigValueChanged.connect(lambda: self._on_detector_changed('band'))
-        p.detector.child('Side').sigValueChanged.connect(lambda: self._on_detector_changed('side'))
+        self._h_det_band = lambda: self._on_detector_changed('band')
+        self._h_det_side = lambda: self._on_detector_changed('side')
+        p.detector.child('Band').sigValueChanged.connect(self._h_det_band)
+        p.detector.child('Side').sigValueChanged.connect(self._h_det_side)
 
         # Sweep
-        p.sweep.child('Sweep').sigValueChanged.connect(lambda: self._on_sweep_changed('slider'))
-        p.sweep.child('Sweep nº').sigValueChanged.connect(lambda: self._on_sweep_changed('number'))
-        p.sweep.child('Timestamp').sigValueChanged.connect(lambda: self._on_sweep_changed('timestamp'))
+        self._h_sweep_slider = lambda: self._on_sweep_changed('slider')
+        self._h_sweep_number = lambda: self._on_sweep_changed('number')
+        self._h_sweep_timestamp = lambda: self._on_sweep_changed('timestamp')
+        p.sweep.child('Sweep').sigValueChanged.connect(self._h_sweep_slider)
+        p.sweep.child('Sweep nº').sigValueChanged.connect(self._h_sweep_number)
+        p.sweep.child('Timestamp').sigValueChanged.connect(self._h_sweep_timestamp)
 
         # FFT params
-        p.fft.child('nperseg').sigValueChanged.connect(lambda: self._on_fft_changed('nperseg'))
-        p.fft.child('noverlap').sigValueChanged.connect(lambda: self._on_fft_changed('noverlap'))
-        p.fft.child('nfft').sigValueChanged.connect(lambda: self._on_fft_changed('nfft'))
-        p.fft.child('burst size (odd)').sigValueChanged.connect(lambda: self._on_fft_changed('burst_size'))
+        self._h_fft_nperseg = lambda: self._on_fft_changed('nperseg')
+        self._h_fft_noverlap = lambda: self._on_fft_changed('noverlap')
+        self._h_fft_nfft = lambda: self._on_fft_changed('nfft')
+        self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
+        self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
+        self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
+        self._h_fft_low = lambda: self._on_fft_changed('low_filter')
+        self._h_fft_high = lambda: self._on_fft_changed('high_filter')
+        p.fft.child('nperseg').sigValueChanged.connect(self._h_fft_nperseg)
+        p.fft.child('noverlap').sigValueChanged.connect(self._h_fft_noverlap)
+        p.fft.child('nfft').sigValueChanged.connect(self._h_fft_nfft)
+        p.fft.child('burst size (odd)').sigValueChanged.connect(self._h_fft_burst)
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
-        p.fft.child('Subtract background').sigValueChanged.connect(lambda: self._on_fft_changed('subtract_background'))
-        p.fft.child('Subtract dispersion').sigValueChanged.connect(lambda: self._on_fft_changed('subtract_dispersion'))
+        p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
+        p.fft.child('Subtract dispersion').sigValueChanged.connect(self._h_fft_sub_disp)
         p.fft.child('Color Map').sigValueChanged.connect(self._on_scale_or_colormap_changed)
-        p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(lambda: self._on_fft_changed('low_filter'))
-        p.fft.child('Filters').child('High Filter').sigValueChanged.connect(lambda: self._on_fft_changed('high_filter'))
+        p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
+        p.fft.child('Filters').child('High Filter').sigValueChanged.connect(self._h_fft_high)
         p.fft.child('Exclude frequencies').sigAddNew.connect(self._on_add_exclusion)
 
         # Profiles
         p.profiles.child('Coordinates').sigValueChanged.connect(self._on_profile_coord_changed)
 
         # Reconstruct
-        p.reconstruct.child('Start Time').sigValueChanged.connect(lambda: self._on_reconstruct_params_changed('start'))
-        p.reconstruct.child('End Time').sigValueChanged.connect(lambda: self._on_reconstruct_params_changed('end'))
+        self._h_recon_start = lambda: self._on_reconstruct_params_changed('start')
+        self._h_recon_end = lambda: self._on_reconstruct_params_changed('end')
+        p.reconstruct.child('Start Time').sigValueChanged.connect(self._h_recon_start)
+        p.reconstruct.child('End Time').sigValueChanged.connect(self._h_recon_end)
         p.reconstruct.child('Reconstruct Shot').sigActivated.connect(self._on_request_reconstruct)
         p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
 
@@ -116,24 +140,27 @@ class AppController(QObject):
         sp = m.spect_params[d.side][d.band]
         filt = m.filters[d.side][d.band]
 
-        p.fft.child('Filters').child('Low Filter').setValue(filt.low, blockSignal=self._on_fft_changed_blocked)
-        p.fft.child('Filters').child('High Filter').setValue(filt.high, blockSignal=self._on_fft_changed_blocked)
-        p.fft.child('nperseg').setValue(sp.nperseg, blockSignal=self._on_fft_changed_blocked)
+        p.fft.child('Filters').child('Low Filter').setValue(filt.low, blockSignal=self._h_fft_low)
+        p.fft.child('Filters').child('High Filter').setValue(filt.high, blockSignal=self._h_fft_high)
+        p.fft.child('nperseg').setValue(sp.nperseg, blockSignal=self._h_fft_nperseg)
 
         # Update noverlap limits then value
-        p.fft.child('noverlap').sigValueChanged.disconnect()
+        p.fft.child('noverlap').sigValueChanged.disconnect(self._h_fft_noverlap)
         p.fft.child('noverlap').setLimits((0, sp.nperseg - 1))
-        p.fft.child('noverlap').sigValueChanged.connect(lambda: self._on_fft_changed('noverlap'))
-        p.fft.child('noverlap').setValue(sp.noverlap, blockSignal=self._on_fft_changed_blocked)
+        p.fft.child('noverlap').sigValueChanged.connect(self._h_fft_noverlap)
+        p.fft.child('noverlap').setValue(sp.noverlap, blockSignal=self._h_fft_noverlap)
 
         # Update nfft limits then value
-        p.fft.child('nfft').sigValueChanged.disconnect()
+        p.fft.child('nfft').sigValueChanged.disconnect(self._h_fft_nfft)
         p.fft.child('nfft').setLimits((sp.nperseg, np.inf))
-        p.fft.child('nfft').sigValueChanged.connect(lambda: self._on_fft_changed('nfft'))
-        p.fft.child('nfft').setValue(sp.nfft, blockSignal=self._on_fft_changed_blocked)
+        p.fft.child('nfft').sigValueChanged.connect(self._h_fft_nfft)
+        p.fft.child('nfft').setValue(sp.nfft, blockSignal=self._h_fft_nfft)
 
-        p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._on_fft_changed_blocked)
-        p.fft.child('Subtract dispersion').setValue(sp.subtract_dispersion if sp.subtract_dispersion is not None else False, blockSignal=self._on_fft_changed_blocked)
+        p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._h_fft_sub_bg)
+        p.fft.child('Subtract dispersion').setValue(
+            sp.subtract_dispersion if sp.subtract_dispersion is not None else False,
+            blockSignal=self._h_fft_sub_disp,
+        )
 
         # Update exclusion filter UI
         p.fft.child('Exclude frequencies').clearChildren()
@@ -141,15 +168,15 @@ class AppController(QObject):
         for excl in m.exclusion_filters[d.side]:
             self._on_add_exclusion()
             children = p.fft.child('Exclude frequencies').children()
-            children[-1].child('from').setValue(excl.low, blockSignal=self._on_exclusion_changed_blocked)
-            children[-1].child('to').setValue(excl.high, blockSignal=self._on_exclusion_changed_blocked)
+            children[-1].child('from').setValue(excl.low, blockSignal=self._on_exclusion_changed)
+            children[-1].child('to').setValue(excl.high, blockSignal=self._on_exclusion_changed)
         self._suppress_exclusions = False
 
         # Update initialization panels
         iv = m.init_values[d.side]
-        p.init.child('Type').setValue(iv.type, blockSignal=self._on_init_changed_blocked)
-        p.init.child('Value').setValue(iv.current_value, blockSignal=self._on_init_changed_blocked)
-        p.init.child('File').setValue(iv.file.name, blockSignal=self._on_init_changed_blocked)
+        p.init.child('Type').setValue(iv.type, blockSignal=self._h_init_type)
+        p.init.child('Value').setValue(iv.current_value, blockSignal=self._h_init_value)
+        p.init.child('File').setValue(iv.file.name, blockSignal=self._h_init_file)
 
         if iv.type == 'Default (recommended)':
             p.init.child('Value').setOpts(readonly=True)
@@ -160,16 +187,6 @@ class AppController(QObject):
         elif iv.type == 'From file':
             p.init.child('Value').setOpts(readonly=True)
             p.init.child('File').setOpts(visible=True)
-
-    # Dummy callables for blockSignal (lambdas can't be used as blockSignal targets)
-    def _on_fft_changed_blocked(self):
-        pass
-
-    def _on_exclusion_changed_blocked(self):
-        pass
-
-    def _on_init_changed_blocked(self):
-        pass
 
     # --- Shot loading ---
 
@@ -182,21 +199,21 @@ class AppController(QObject):
             file_path = p.file.child('Open').value()
             try:
                 m.load_shot_from_path(file_path)
-                p.file.child('Shot').setValue(m.shot, blockSignal=lambda: self._on_shot_changed('shot'))
+                p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
             except (ValueError, FileNotFoundError):
                 show_warning()
                 return
             finally:
-                p.file.child('Open').setValue(m.file_path, blockSignal=lambda: self._on_shot_changed('open'))
+                p.file.child('Open').setValue(m.file_path, blockSignal=self._h_shot_open)
 
         elif source == 'shot':
             shot = p.file.child('Shot').value()
             try:
                 m.load_shot_from_number(shot)
-                p.file.child('Open').setValue(m.file_path, blockSignal=lambda: self._on_shot_changed('open'))
+                p.file.child('Open').setValue(m.file_path, blockSignal=self._h_shot_open)
             except FileNotFoundError:
                 show_warning()
-                p.file.child('Shot').setValue(m.shot, blockSignal=lambda: self._on_shot_changed('shot'))
+                p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
                 return
 
         # Show all parameters
@@ -262,7 +279,7 @@ class AppController(QObject):
             data = np.atleast_2d(np.loadtxt(path, delimiter=','))
             m.init_values[d.side].file.time = data[:, 0]
             m.init_values[d.side].file.position = data[:, 1]
-            p.init.child('File').setValue(path + ' (loaded)', blockSignal=self._on_init_changed_blocked)
+            p.init.child('File').setValue(path + ' (loaded)', blockSignal=self._h_init_file)
             m.init_values[d.side].file.name = p.init.child('File').value()
 
         m.initialize_limiters(d.side, p.sweep.child('Timestamp').value(), define_init_funcs=True)
@@ -298,25 +315,25 @@ class AppController(QObject):
             value = p.sweep.child('Sweep').value()
             m.detector.sweep = value - 1
             timestamp = ts[value - 1]
-            p.sweep.child('Sweep nº').setValue(value, blockSignal=lambda: self._on_sweep_changed('number'))
-            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=lambda: self._on_sweep_changed('timestamp'))
+            p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
+            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
 
         elif source == 'number':
             value = int(p.sweep.child('Sweep nº').value())
             m.detector.sweep = value - 1
             timestamp = ts[value - 1]
-            p.sweep.child('Sweep nº').setValue(value, blockSignal=lambda: self._on_sweep_changed('number'))
-            p.sweep.child('Sweep').setValue(value, blockSignal=lambda: self._on_sweep_changed('slider'))
-            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=lambda: self._on_sweep_changed('timestamp'))
+            p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
+            p.sweep.child('Sweep').setValue(value, blockSignal=self._h_sweep_slider)
+            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
 
         elif source == 'timestamp':
             value = p.sweep.child('Timestamp').value()
             timestamp = round_to_nearest(value, ts)
             index = np.where(ts == timestamp)
             m.detector.sweep = index[0][0]
-            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=lambda: self._on_sweep_changed('timestamp'))
-            p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=lambda: self._on_sweep_changed('slider'))
-            p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=lambda: self._on_sweep_changed('number'))
+            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
+            p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self._h_sweep_slider)
+            p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
 
         m.initialize_limiters(m.detector.side, p.sweep.child('Timestamp').value())
 
@@ -342,7 +359,7 @@ class AppController(QObject):
         if source == 'nperseg':
             value = int(p.fft.child('nperseg').value())
             sp.nperseg = value
-            p.fft.child('nperseg').setValue(value, blockSignal=self._on_fft_changed_blocked)
+            p.fft.child('nperseg').setValue(value, blockSignal=self._h_fft_nperseg)
             self._suppress_fft_updates = True
             p.fft.child('noverlap').setLimits((0, value - 1))
             p.fft.child('nfft').setLimits((value, np.inf))
@@ -351,18 +368,18 @@ class AppController(QObject):
         elif source == 'noverlap':
             value = int(p.fft.child('noverlap').value())
             sp.noverlap = value
-            p.fft.child('noverlap').setValue(value, blockSignal=self._on_fft_changed_blocked)
+            p.fft.child('noverlap').setValue(value, blockSignal=self._h_fft_noverlap)
 
         elif source == 'nfft':
             value = int(p.fft.child('nfft').value())
             sp.nfft = value
-            p.fft.child('nfft').setValue(value, blockSignal=self._on_fft_changed_blocked)
+            p.fft.child('nfft').setValue(value, blockSignal=self._h_fft_nfft)
 
         elif source == 'burst_size':
             value = int(p.fft.child('burst size (odd)').value())
             if value % 2 == 0:
                 value -= 1
-            p.fft.child('burst size (odd)').setValue(value, blockSignal=self._on_fft_changed_blocked)
+            p.fft.child('burst size (odd)').setValue(value, blockSignal=self._h_fft_burst)
             m.detector.burst_size = value
 
             lower_limit = 1 + value // 2
@@ -383,13 +400,13 @@ class AppController(QObject):
             filt.low = p.fft.child('Filters').child('Low Filter').value()
             if fft.f_beat is not None and filt.low + abs(fft.f_beat[1] - fft.f_beat[0]) >= filt.high:
                 filt.high = filt.low + abs(fft.f_beat[1] - fft.f_beat[0])
-                p.fft.child('Filters').child('High Filter').setValue(filt.high, blockSignal=self._on_fft_changed_blocked)
+                p.fft.child('Filters').child('High Filter').setValue(filt.high, blockSignal=self._h_fft_high)
 
         elif source == 'high_filter':
             filt.high = p.fft.child('Filters').child('High Filter').value()
             if fft.f_beat is not None and filt.high - abs(fft.f_beat[1] - fft.f_beat[0]) <= filt.low:
                 filt.low = filt.high - abs(fft.f_beat[1] - fft.f_beat[0])
-                p.fft.child('Filters').child('Low Filter').setValue(filt.low, blockSignal=self._on_fft_changed_blocked)
+                p.fft.child('Filters').child('Low Filter').setValue(filt.low, blockSignal=self._h_fft_low)
 
         # Trigger appropriate updates
         if not self._suppress_fft_updates:
@@ -414,7 +431,6 @@ class AppController(QObject):
 
     def _on_add_exclusion(self):
         """Add a new exclusion frequency range."""
-        from model.state import ExclusionRange
         p = self.panels
         m = self.model
         d = m.detector
@@ -456,7 +472,7 @@ class AppController(QObject):
         # Remove from model
         m.exclusion_filters[d.side].pop(num_of_parent - 1)
 
-        self._draw_spectrogram_beatf_overlay()
+        self._draw_spectrogram()
         self._draw_group_delays()
         self._draw_profile()
 
@@ -466,17 +482,17 @@ class AppController(QObject):
 
         if sender.name() == 'from':
             if sender.value() > sender.parent().child('to').value():
-                sender.parent().child('to').setValue(sender.value(), blockSignal=self._on_exclusion_changed_blocked)
+                sender.parent().child('to').setValue(sender.value(), blockSignal=self._on_exclusion_changed)
         elif sender.name() == 'to':
             if sender.value() < sender.parent().child('from').value():
-                sender.parent().child('from').setValue(sender.value(), blockSignal=self._on_exclusion_changed_blocked)
+                sender.parent().child('from').setValue(sender.value(), blockSignal=self._on_exclusion_changed)
 
         exclusion_num = int(sender.parent().name())
         d = self.model.detector
         self.model.exclusion_filters[d.side][exclusion_num - 1].low = sender.parent().child('from').value()
         self.model.exclusion_filters[d.side][exclusion_num - 1].high = sender.parent().child('to').value()
 
-        self._draw_spectrogram_beatf_overlay()
+        self._draw_spectrogram()
         self._draw_group_delays()
         self._draw_profile()
 
@@ -499,13 +515,13 @@ class AppController(QObject):
             if p.reconstruct.child('Start Time').value() > p.reconstruct.child('End Time').value():
                 p.reconstruct.child('End Time').setValue(
                     p.reconstruct.child('Start Time').value(),
-                    blockSignal=lambda: self._on_reconstruct_params_changed('end'),
+                    blockSignal=self._h_recon_end,
                 )
         elif source == 'end':
             if p.reconstruct.child('End Time').value() < p.reconstruct.child('Start Time').value():
                 p.reconstruct.child('Start Time').setValue(
                     p.reconstruct.child('End Time').value(),
-                    blockSignal=lambda: self._on_reconstruct_params_changed('start'),
+                    blockSignal=self._h_recon_start,
                 )
 
     def _on_cutoff_changed(self):
@@ -565,7 +581,7 @@ class AppController(QObject):
 
         # Force change signal to handle sweep number and plot everything
         p = self.panels
-        p.fft.child('burst size (odd)').setValue(2, blockSignal=self._on_fft_changed_blocked)
+        p.fft.child('burst size (odd)').setValue(2, blockSignal=self._h_fft_burst)
         p.fft.child('burst size (odd)').setValue(self.model.detector.burst_size)
 
         p.config.child('Load').setValue(path + ' (loaded)', blockSignal=self._on_load_config)
@@ -598,12 +614,12 @@ class AppController(QObject):
         m = self.model
         d = m.detector
         fft = m.current_fft
-        disp = m.current_display
         sp = m.spect_params[d.side][d.band]
         filt = m.filters[d.side][d.band]
 
         # Recompute display data (background subtraction + beatf) for visual-only changes
         m.compute_current_display()
+        disp = m.current_display
 
         scale = self.panels.fft.child('Scale').value()
         colormap = self.panels.fft.child('Color Map').value()
@@ -621,17 +637,6 @@ class AppController(QObject):
             self.view.plot_spect, fft.f_probe, disp.y_beatf,
             m.exclusion_filters[d.side], d.side,
         )
-
-    def _draw_spectrogram_beatf_overlay(self):
-        """Redraw just the beat frequency overlay on the spectrogram (after exclusion changes)."""
-        # For exclusion changes we need to recompute the beat frequency since filters may have changed
-        m = self.model
-        d = m.detector
-        fft = m.current_fft
-        disp = m.current_display
-
-        # We need a full spectrogram redraw since pyqtgraph doesn't support selective overlay removal
-        self._draw_spectrogram()
 
     def _draw_group_delays(self):
         """Compute aggregated delays and render group delay plot."""
