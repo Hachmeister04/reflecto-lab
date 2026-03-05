@@ -1,0 +1,158 @@
+import numpy as np
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtGui
+
+from constants import (
+    BANDS, SIDES,
+    HFS_COLOR, HFS_EXCLUSION_COLOR, LFS_COLOR, LFS_EXCLUSION_COLOR,
+)
+
+
+class PlotRenderer:
+    """Stateless rendering methods. Each method receives its data explicitly."""
+
+    @staticmethod
+    def draw_sweep(plot_widget, x_data, data, signal_type):
+        """Draw linearized sweep in the Sweep plot."""
+        y_real = np.real(data)
+        y_imag = np.imag(data)
+
+        plot_widget.clear()
+        plot_widget.plot(x_data, y_real, pen=pg.mkPen(color='r', width=2))
+
+        if not np.array_equiv(y_imag, 0):
+            plot_widget.plot(x_data, y_imag, pen=pg.mkPen(color='b', width=2))
+
+        plot_widget.setLimits(
+            xMin=x_data[0], xMax=x_data[-1],
+            yMin=-2**11, yMax=2**11,
+        )
+        plot_widget.setRange(
+            xRange=(x_data[0], x_data[-1]),
+            yRange=(-2**11, 2**11),
+        )
+        plot_widget.setLabel('bottom', 'Probing Frequency', units='Hz')
+
+    @staticmethod
+    def draw_spectrogram(plot_widget, Sxx, scale, colormap, nperseg, noverlap,
+                         f, f_beat, f_probe, fs, band, existing_colorbar):
+        """Draw spectrogram image. Returns updated colorBar reference."""
+        # Scale the spectrogram
+        if scale == 'Normalized':
+            Sxx_display = np.array(Sxx)
+            max_vals = np.max(Sxx_display, axis=0)
+            max_vals[max_vals == 0] = 1
+            Sxx_display = Sxx_display / max_vals
+        elif scale == 'Linear':
+            Sxx_display = np.array(Sxx)
+        elif scale == 'Logarithmic':
+            Sxx_display = np.log(np.array(Sxx))
+        else:
+            Sxx_display = np.array(Sxx)
+
+        # Prepare ImageItem transformation
+        transform = QtGui.QTransform()
+        alpha_x = (nperseg - noverlap) * abs(f[1] - f[0])
+        transform.translate(
+            noverlap / 2 * abs(f[1] - f[0]) + f[0],
+            -fs / 2 if band == 'V' else 0,
+        )
+        transform.scale(alpha_x, abs(f_beat[1] - f_beat[0]))
+
+        # Create and add ImageItem
+        img = pg.ImageItem(image=Sxx_display.T)
+        img.setTransform(transform)
+
+        plot_widget.clear()
+        plot_widget.addItem(img)
+
+        # Color bar
+        try:
+            existing_colorbar.setImageItem(img)
+            existing_colorbar.setColorMap(colormap)
+            existing_colorbar.setLevels(values=(np.min(Sxx_display), np.max(Sxx_display)))
+            colorbar = existing_colorbar
+        except (AttributeError, TypeError):
+            colorbar = plot_widget.addColorBar(
+                img, colorMap=colormap,
+                values=(np.min(Sxx_display), np.max(Sxx_display)),
+            )
+
+        # Configure plot appearance
+        plot_widget.setMouseEnabled(x=True, y=True)
+        plot_widget.setLimits(
+            xMin=f_probe[0] - (f_probe[1] - f_probe[0]) / 2,
+            xMax=f_probe[-1] + (f_probe[1] - f_probe[0]) / 2,
+            yMin=f_beat[0] - (f_beat[1] - f_beat[0]) / 2,
+            yMax=f_beat[-1] + (f_beat[1] - f_beat[0]) / 2,
+        )
+        plot_widget.setLabel('bottom', 'Probing Frequency', units='Hz')
+        plot_widget.setLabel('left', 'Beat Frequency', units='Hz')
+
+        return colorbar
+
+    @staticmethod
+    def draw_dispersion_line(plot_widget, f_probe, y_dis):
+        """Overlay dispersion curve on spectrogram."""
+        plot_widget.plot(f_probe, y_dis, pen=pg.mkPen(color='g', width=2))
+
+    @staticmethod
+    def draw_filter_lines(plot_widget, f_probe, y_dis, filter_low, filter_high):
+        """Draw low and high filter lines on spectrogram."""
+        y_low = y_dis + filter_low
+        plot_widget.plot(f_probe, y_low, pen=pg.mkPen(color='b', width=2))
+
+        y_high = y_dis + filter_high
+        plot_widget.plot(f_probe, y_high, pen=pg.mkPen(color='w', width=2))
+
+    @staticmethod
+    def draw_beatf_on_spectrogram(plot_widget, f_probe, y_beatf, exclusion_filters, side):
+        """Draw beat frequency curve + exclusion overlays on spectrogram."""
+        plot_widget.plot(f_probe, y_beatf, pen=pg.mkPen(color='r', width=2))
+
+        for excl in exclusion_filters:
+            mask = (f_probe >= excl.low) & (f_probe <= excl.high)
+            plot_widget.plot(f_probe[mask], y_beatf[mask], pen=pg.mkPen(color='w', width=2))
+
+    @staticmethod
+    def draw_group_delays(plot_widget, beat_frequencies, exclusion_filters,
+                          aggregated_hfs, aggregated_lfs):
+        """Draw the group delay plot with all beat frequencies."""
+        plot_widget.clear()
+
+        # Draw aggregated white lines
+        plot_widget.plot(aggregated_hfs.f_probe, aggregated_hfs.beat_time,
+                         pen=pg.mkPen(color='w', width=2))
+        plot_widget.plot(aggregated_lfs.f_probe, aggregated_lfs.beat_time,
+                         pen=pg.mkPen(color='w', width=2))
+
+        # Draw individual beat frequencies colored by side
+        for side in SIDES:
+            color = HFS_COLOR if side == 'HFS' else LFS_COLOR
+            excl_color = HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR
+
+            for band in BANDS:
+                bf = beat_frequencies[side][band]
+                plot_widget.plot(bf.f_probe, bf.y_beat_time,
+                                pen=pg.mkPen(color=color, width=2))
+
+                # Draw exclusion highlights
+                for excl in exclusion_filters[side]:
+                    mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
+                    plot_widget.plot(bf.f_probe[mask], bf.y_beat_time[mask],
+                                    pen=pg.mkPen(color=excl_color, width=2))
+
+        plot_widget.setLabel('bottom', 'Probing Frequency', units='Hz')
+        plot_widget.setLabel('left', 'Time Delay', units='s')
+
+    @staticmethod
+    def draw_profile(plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode):
+        """Draw density profile."""
+        plot_widget.clear()
+        plot_widget.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
+        plot_widget.plot(r_LFS, ne_LFS * 1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
+
+        x_label = 'radius'
+        x_units = 'm' if coordinate_mode == 'R (m)' else ''
+        plot_widget.setLabel('bottom', x_label, units=x_units)
+        plot_widget.setLabel('left', 'density', units='1e19 m^-3')
