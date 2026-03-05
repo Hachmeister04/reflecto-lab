@@ -1,3 +1,4 @@
+import getpass
 import os
 import logging
 import numpy as np
@@ -535,8 +536,9 @@ class AppController(QObject):
 
         # If HDF5 is enabled, let the user choose the output directory and filename
         if write_hdf5:
+            default_name = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/RPS_{m.shot}.h5"
             hdf5_destination_path, _ = QFileDialog.getSaveFileName(
-                self.view, 'Save HDF5 File', '', 'HDF5 Files (*.h5)',
+                self.view, 'Save HDF5 File', default_name, 'HDF5 Files (*.h5)',
             )
             if not hdf5_destination_path:
                 return  # User cancelled — abort reconstruction
