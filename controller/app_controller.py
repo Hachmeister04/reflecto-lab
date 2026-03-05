@@ -2,7 +2,7 @@ import os
 import logging
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QFileDialog
-from PyQt5.QtCore import pyqtSignal, QObject, QThread, pyqtSlot
+from PyQt5.QtCore import QObject
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
@@ -10,8 +10,8 @@ from constants import (
 )
 from model.shot_model import ShotModel
 from model.state import ReconstructionInput, ExclusionRange
-from model.reconstruction import ReconstructionWorker
 from view.main_window import MainWindowView
+from view.reconstruction_window import ReconstructionWindow
 from view.parameter_panels import ParameterPanels
 from view.plot_renderers import PlotRenderer
 from utils.helpers import round_to_nearest
@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 class AppController(QObject):
     """Wires model and view together. Owns all signal-handling logic."""
 
-    request_signal = pyqtSignal(object)
-
     def __init__(self):
         super().__init__()
 
@@ -35,17 +33,12 @@ class AppController(QObject):
         self.view.set_parameter_panels(self.panels)
         self.renderer = PlotRenderer()
 
-        # Threading
-        self._thread = QThread()
-        self._worker = ReconstructionWorker()
-        self._worker.finished_signal.connect(self._on_reconstruct_finished)
-        self.request_signal.connect(self._worker.reconstruct)
-        self._worker.moveToThread(self._thread)
+        # Track open reconstruction windows
+        self._reconstruction_windows = []
 
         qApp = QApplication.instance()
         if qApp is not None:
-            qApp.aboutToQuit.connect(self._thread.quit)
-        self._thread.start()
+            qApp.aboutToQuit.connect(self._cleanup_all_reconstructions)
 
         # Suppression flags
         self._suppress_fft_updates = False
@@ -573,13 +566,18 @@ class AppController(QObject):
             get_init_hfs=lambda time: m.get_init('HFS', time),
         )
 
-        self.request_signal.emit(params)
-        self.view.set_reconstruct_ui_enabled(self.panels, False)
+        window = ReconstructionWindow(params)
+        self._reconstruction_windows.append(window)
+        window.destroyed.connect(
+            lambda: self._reconstruction_windows.remove(window)
+            if window in self._reconstruction_windows else None
+        )
+        window.show()
 
-    @pyqtSlot()
-    def _on_reconstruct_finished(self):
-        """Re-enable UI after reconstruction."""
-        self.view.set_reconstruct_ui_enabled(self.panels, True)
+    def _cleanup_all_reconstructions(self):
+        """Clean up all running reconstruction threads on app quit."""
+        for window in list(self._reconstruction_windows):
+            window.cleanup_thread()
 
     # --- Config ---
 

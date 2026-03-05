@@ -69,10 +69,3 @@ class MainWindowView(QMainWindow):
         """Make parameter groups visible after shot load."""
         for group in panels.hideable_groups():
             group.setOpts(visible=True)
-
-    def set_reconstruct_ui_enabled(self, panels, enabled):
-        """Enable or disable reconstruction UI elements."""
-        panels.reconstruct.child('Start Time').setOpts(enabled=enabled)
-        panels.reconstruct.child('End Time').setOpts(enabled=enabled)
-        panels.reconstruct.child('Time Step').setOpts(enabled=enabled)
-        panels.reconstruct.child('Reconstruct Shot').setOpts(enabled=enabled)
