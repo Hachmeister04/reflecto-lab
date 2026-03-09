@@ -1,5 +1,5 @@
 from pyqtgraph.parametertree import Parameter
-
+import getpass
 from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE,
     MAX_BURST_SIZE,
@@ -28,9 +28,10 @@ class ParameterPanels:
         ])
         self.init.child('File').setValue('')
 
+        default_folder = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/"
         self.config = Parameter.create(name='Configuration', type='group', visible=False, children=[
-            {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)'},
-            {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)'},
+            {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)', 'directory': default_folder},
+            {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)', 'directory': default_folder},
         ])
         self.config.child('Save').setValue('')
         self.config.child('Load').setValue('')
