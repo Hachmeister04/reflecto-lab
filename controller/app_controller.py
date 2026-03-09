@@ -637,9 +637,16 @@ class AppController(QObject):
 
     def _recompute_sweep(self):
         """Compute sweep data and render."""
+        _t0 = time.perf_counter()
         self.model.compute_sweep()
+        _t1 = time.perf_counter()
         sw = self.model.current_sweep
         self.renderer.draw_sweep(self.view.plot_sweep, sw.x_data, sw.data, sw.signal_type)
+        _t2 = time.perf_counter()
+        logger.info(
+            "  _recompute_sweep: compute=%.1fms draw=%.1fms",
+            (_t1 - _t0) * 1000, (_t2 - _t1) * 1000,
+        )
 
     def _recompute_fft_and_display(self):
         """Compute FFT + display data and render spectrogram with all overlays."""

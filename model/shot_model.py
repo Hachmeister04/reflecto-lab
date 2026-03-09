@@ -172,19 +172,27 @@ class ShotModel:
 
     def compute_sweep(self):
         """Compute linearized sweep data for current detector."""
+        import time as _time
         d = self.detector
         signal_type = 'complex' if d.band == 'V' else 'real'
 
+        _t0 = _time.perf_counter()
         data = rpspy.get_band_signal(
             self.shot, self.file_path, d.band, d.side, signal_type, d.sweep
         )[0]
         data -= 2**11 if signal_type == 'real' else (2**11 + 1j * 2**11)
+        _t1 = _time.perf_counter()
 
         x_data = cached_get_auto_linearization_from_shares(self.shot, d.band, d.sweep)
-
-        logger.debug("sweep: %d", d.sweep)
+        _t2 = _time.perf_counter()
 
         x_data, data = rpspy.linearize(x_data, data)
+        _t3 = _time.perf_counter()
+
+        logger.info(
+            "  compute_sweep: get_band_signal=%.1fms linearization_cache=%.1fms linearize=%.1fms",
+            (_t1 - _t0) * 1000, (_t2 - _t1) * 1000, (_t3 - _t2) * 1000,
+        )
 
         self.current_sweep = CurrentSweepData(
             data=data,
@@ -320,9 +328,15 @@ class ShotModel:
 
     def compute_all_beatf(self):
         """Update beat frequencies for all 8 detectors."""
+        import time as _time
+        _timings = []
         for side in SIDES:
             for band in BANDS:
+                _t0 = _time.perf_counter()
                 self.compute_one_beatf(band, side)
+                _t1 = _time.perf_counter()
+                _timings.append(f"{band}-{side}={(_t1-_t0)*1000:.1f}ms")
+        logger.info("  all_beatf per-detector: %s", "  ".join(_timings))
 
     # --- Background ---
 
