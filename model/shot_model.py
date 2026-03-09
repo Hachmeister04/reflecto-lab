@@ -1,6 +1,7 @@
 import logging
 import json
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 from scipy.signal import spectrogram
 from scipy.fft import fftshift
 import scipy.constants as cst
@@ -169,6 +170,23 @@ class ShotModel:
         return self.outer_limiter
 
     # --- Sweep computation ---
+
+    def prewarm_linearization_cache(self, sweep):
+        """Pre-warm the linearization cache for all 4 bands in parallel.
+
+        Each rpspy.get_linearization call takes ~80ms on cache miss.
+        Running 4 bands sequentially = ~320ms; in parallel = ~80ms.
+        """
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(
+                    cached_get_auto_linearization_from_shares,
+                    self.shot, band, sweep,
+                )
+                for band in BANDS
+            ]
+            for f in futures:
+                f.result()
 
     def compute_sweep(self):
         """Compute linearized sweep data for current detector."""

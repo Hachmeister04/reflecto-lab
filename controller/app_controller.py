@@ -334,6 +334,12 @@ class AppController(QObject):
             p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
 
         t1 = time.perf_counter()
+
+        # Pre-warm linearization cache for all 4 bands in parallel.
+        # Each cache miss costs ~80ms; 4 sequential = ~320ms, parallel = ~80ms.
+        m.prewarm_linearization_cache(m.detector.sweep)
+        t1b = time.perf_counter()
+
         m.initialize_limiters(m.detector.side, p.sweep.child('Timestamp').value())
         t2 = time.perf_counter()
 
@@ -354,9 +360,9 @@ class AppController(QObject):
             t7 = time.perf_counter()
 
             logger.info(
-                "SWEEP TIMING: init=%.1fms sweep=%.1fms fft+display=%.1fms "
+                "SWEEP TIMING: prewarm=%.1fms init=%.1fms sweep=%.1fms fft+display=%.1fms "
                 "all_beatf=%.1fms group_delays=%.1fms profile=%.1fms TOTAL=%.1fms",
-                (t2 - t1) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
+                (t1b - t1) * 1000, (t2 - t1b) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
                 (t5 - t4) * 1000, (t6 - t5) * 1000, (t7 - t6) * 1000,
                 (t7 - t0) * 1000,
             )
