@@ -1,5 +1,6 @@
 import getpass
 import os
+import time
 import logging
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QFileDialog
@@ -302,6 +303,8 @@ class AppController(QObject):
 
     def _on_sweep_changed(self, source):
         """Sweep/timestamp change."""
+        t0 = time.perf_counter()
+
         p = self.panels
         m = self.model
         ts = m.time_stamps
@@ -330,15 +333,33 @@ class AppController(QObject):
             p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self._h_sweep_slider)
             p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
 
+        t1 = time.perf_counter()
         m.initialize_limiters(m.detector.side, p.sweep.child('Timestamp').value())
+        t2 = time.perf_counter()
 
         self._recompute_sweep()
+        t3 = time.perf_counter()
 
         if not self._suppress_fft_updates:
             self._recompute_fft_and_display()
+            t4 = time.perf_counter()
+
             m.compute_all_beatf()
+            t5 = time.perf_counter()
+
             self._draw_group_delays()
+            t6 = time.perf_counter()
+
             self._draw_profile()
+            t7 = time.perf_counter()
+
+            logger.info(
+                "SWEEP TIMING: init=%.1fms sweep=%.1fms fft+display=%.1fms "
+                "all_beatf=%.1fms group_delays=%.1fms profile=%.1fms TOTAL=%.1fms",
+                (t2 - t1) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
+                (t5 - t4) * 1000, (t6 - t5) * 1000, (t7 - t6) * 1000,
+                (t7 - t0) * 1000,
+            )
 
     # --- FFT parameters ---
 
