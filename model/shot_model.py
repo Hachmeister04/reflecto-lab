@@ -69,6 +69,9 @@ class ShotModel:
         # Cached shot-level data
         self.sampling_frequency = None
 
+        # Persistent thread pool for parallel computation
+        self._executor = ThreadPoolExecutor(max_workers=4)
+
         # Limiter/initialization
         self.inner_limiter = 0.0
         self.outer_limiter = 0.0
@@ -181,16 +184,15 @@ class ShotModel:
         Each rpspy.get_linearization call takes ~80ms on cache miss.
         Running 4 bands sequentially = ~320ms; in parallel = ~80ms.
         """
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [
-                executor.submit(
-                    cached_get_auto_linearization_from_shares,
-                    self.shot, band, sweep,
-                )
-                for band in BANDS
-            ]
-            for f in futures:
-                f.result()
+        futures = [
+            self._executor.submit(
+                cached_get_auto_linearization_from_shares,
+                self.shot, band, sweep,
+            )
+            for band in BANDS
+        ]
+        for f in futures:
+            f.result()
 
     def compute_sweep(self):
         """Compute linearized sweep data for current detector."""
@@ -375,14 +377,13 @@ class ShotModel:
             if not (side == d.side and band == d.band)
         ]
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {
-                executor.submit(self._compute_one_beatf_result, band, side): (band, side)
-                for band, side in others
-            }
-            for future in futures:
-                band, side = futures[future]
-                self.beat_frequencies[side][band] = future.result()
+        futures = {
+            self._executor.submit(self._compute_one_beatf_result, band, side): (band, side)
+            for band, side in others
+        }
+        for future in futures:
+            band, side = futures[future]
+            self.beat_frequencies[side][band] = future.result()
 
         _t_end = _time.perf_counter()
         logger.info("  all_beatf: %.1fms (7 detectors parallel)", (_t_end - _t_start) * 1000)
