@@ -658,18 +658,20 @@ class AppController(QObject):
         """Compute FFT + display data and render spectrogram with all overlays."""
         self.model.compute_current_fft()
         self.model.compute_current_display()
-        self._draw_spectrogram()
+        self._draw_spectrogram_only()
 
     def _draw_spectrogram(self):
-        """Full spectrogram redraw including all overlays."""
+        """Recompute display data then redraw spectrogram. For standalone callers."""
+        self.model.compute_current_display()
+        self._draw_spectrogram_only()
+
+    def _draw_spectrogram_only(self):
+        """Render spectrogram with all overlays. Assumes display data is current."""
         m = self.model
         d = m.detector
         fft = m.current_fft
         sp = m.spect_params[d.side][d.band]
         filt = m.filters[d.side][d.band]
-
-        # Recompute display data (background subtraction + beatf) for visual-only changes
-        m.compute_current_display()
         disp = m.current_display
 
         scale = self.panels.fft.child('Scale').value()

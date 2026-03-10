@@ -66,6 +66,9 @@ class ShotModel:
         self.aggregated_hfs = AggregatedDelayData()
         self.aggregated_lfs = AggregatedDelayData()
 
+        # Cached shot-level data
+        self.sampling_frequency = None
+
         # Limiter/initialization
         self.inner_limiter = 0.0
         self.outer_limiter = 0.0
@@ -93,6 +96,7 @@ class ShotModel:
 
     def post_load_init(self):
         """Run after successful shot load: backgrounds, limiters, timestamps."""
+        self.sampling_frequency = rpspy.get_sampling_frequency(self.shot, self.file_path)
         self.compute_all_backgrounds()
         self._init_default_limiters()
         self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
@@ -236,7 +240,7 @@ class ShotModel:
 
         f, linearized_burst = rpspy.linearize(f, burst)
 
-        fs = rpspy.get_sampling_frequency(self.shot, self.file_path)
+        fs = self.sampling_frequency
 
         if band == 'V':
             linearized_burst -= (2**11 + 1j * 2**11)
@@ -324,37 +328,64 @@ class ShotModel:
                 y_beat_time=y_beat_time, df_dt=df_dt,
             )
         else:
-            sp = self.spect_params[side][band]
-            f, fs, f_beat, t, f_probe, Sxx = self.compute_spectrogram(
-                band, side, sp.nperseg, sp.noverlap, sp.nfft,
-                d.sweep, d.burst_size, sp.subtract_dispersion,
-            )
+            self.beat_frequencies[side][band] = self._compute_one_beatf_result(band, side)
 
-            if sp.subtract_background:
-                Sxx = self.background_subtract(Sxx, band, side)
+    def _compute_one_beatf_result(self, band, side):
+        """Compute beat freq for one non-current band/side. Returns result (thread-safe)."""
+        d = self.detector
+        sp = self.spect_params[side][band]
+        f, fs, f_beat, t, f_probe, Sxx = self.compute_spectrogram(
+            band, side, sp.nperseg, sp.noverlap, sp.nfft,
+            d.sweep, d.burst_size, sp.subtract_dispersion,
+        )
 
-            y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
-            y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs)
+        if sp.subtract_background:
+            Sxx = self.background_subtract(Sxx, band, side)
 
-            df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
-            y_beat_time = (y_beatf - y_dis) / df_dt
+        y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
+        y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs)
 
-            self.beat_frequencies[side][band] = BeatFrequencyData(
-                f_probe=f_probe, y_beatf=y_beatf,
-                y_beat_time=y_beat_time, df_dt=df_dt,
-            )
+        df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
+        y_beat_time = (y_beatf - y_dis) / df_dt
+
+        return BeatFrequencyData(
+            f_probe=f_probe, y_beatf=y_beatf,
+            y_beat_time=y_beat_time, df_dt=df_dt,
+        )
 
     def compute_all_beatf(self):
-        """Update beat frequencies for all 8 detectors."""
+        """Update beat frequencies for all 8 detectors in parallel."""
         import time as _time
-        _timings = []
-        for side in SIDES:
-            for band in BANDS:
-                _t0 = _time.perf_counter()
-                self.compute_one_beatf(band, side)
-                _t1 = _time.perf_counter()
-                _timings.append(f"{band}-{side}={(_t1-_t0)*1000:.1f}ms")
-        logger.info("  all_beatf per-detector: %s", "  ".join(_timings))
+        _t_start = _time.perf_counter()
+        d = self.detector
+
+        # Current detector — instant, uses cached FFT/display data
+        fft = self.current_fft
+        disp = self.current_display
+        df_dt = (fft.f[-1] - fft.f[0]) / ((len(fft.f) - 1) * (1 / fft.fs))
+        y_beat_time = (disp.y_beatf - disp.y_dis) / df_dt
+        self.beat_frequencies[d.side][d.band] = BeatFrequencyData(
+            f_probe=fft.f_probe, y_beatf=disp.y_beatf,
+            y_beat_time=y_beat_time, df_dt=df_dt,
+        )
+
+        # Remaining 7 detectors — run in parallel
+        others = [
+            (band, side) for side in SIDES for band in BANDS
+            if not (side == d.side and band == d.band)
+        ]
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(self._compute_one_beatf_result, band, side): (band, side)
+                for band, side in others
+            }
+            for future in futures:
+                band, side = futures[future]
+                self.beat_frequencies[side][band] = future.result()
+
+        _t_end = _time.perf_counter()
+        logger.info("  all_beatf: %.1fms (7 detectors parallel)", (_t_end - _t_start) * 1000)
 
     # --- Background ---
 
