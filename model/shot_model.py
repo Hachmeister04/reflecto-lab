@@ -475,17 +475,19 @@ class ShotModel:
         )
         gd_lfs_y = np.interp(gd_lfs_x, self.aggregated_lfs.f_probe, self.aggregated_lfs.beat_time)
 
-        # Run HFS and LFS profile inversions in parallel
-        hfs_clip = np.clip(gd_hfs_y - gd_hfs_y[0], a_min=-np.inf, a_max=np.inf)
-        lfs_clip = np.clip(gd_lfs_y - gd_lfs_y[0], a_min=-np.inf, a_max=np.inf)
+        r_HFS = rpspy.profile_inversion(
+            gd_hfs_x,
+            np.clip(gd_hfs_y - gd_hfs_y[0], a_min=-np.inf, a_max=np.inf),
+            pwld_batch=True,
+        )
+        r_LFS = rpspy.profile_inversion(
+            gd_lfs_x,
+            np.clip(gd_lfs_y - gd_lfs_y[0], a_min=-np.inf, a_max=np.inf),
+            pwld_batch=True,
+        )
 
-        fut_hfs = self._executor.submit(
-            rpspy.profile_inversion, gd_hfs_x, hfs_clip, pwld_batch=True)
-        fut_lfs = self._executor.submit(
-            rpspy.profile_inversion, gd_lfs_x, lfs_clip, pwld_batch=True)
-
-        r_HFS = fut_hfs.result() + self.inner_limiter
-        r_LFS = -fut_lfs.result() + self.outer_limiter
+        r_HFS = r_HFS + self.inner_limiter
+        r_LFS = -r_LFS + self.outer_limiter
 
         ne_HFS = rpspy.f_to_ne(gd_hfs_x)
         ne_LFS = rpspy.f_to_ne(gd_lfs_x)
