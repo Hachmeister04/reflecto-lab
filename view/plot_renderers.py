@@ -7,9 +7,30 @@ from constants import (
     HFS_COLOR, HFS_EXCLUSION_COLOR, LFS_COLOR, LFS_EXCLUSION_COLOR,
 )
 
+# Max exclusion filters per side (matches UI limit in app_controller)
+_MAX_EXCL = 10
+
 
 class PlotRenderer:
-    """Stateless rendering methods. Each method receives its data explicitly."""
+    """Rendering methods with persistent plot curves for fast updates.
+
+    Group delay and profile plots use pre-allocated PlotDataItem curves
+    that are updated via setData() instead of clear() + plot(). This avoids
+    expensive Qt scene graph item creation/destruction on every slider tick.
+    """
+
+    def __init__(self):
+        # Group delay persistent curves (lazy-initialized on first draw)
+        self._gd_agg_hfs = None
+        self._gd_agg_lfs = None
+        self._gd_band = {}      # (side, band) -> PlotDataItem
+        self._gd_excl = {}      # (side, band, idx) -> PlotDataItem
+        self._gd_ready = False
+
+        # Profile persistent curves (lazy-initialized on first draw)
+        self._prof_hfs = None
+        self._prof_lfs = None
+        self._prof_ready = False
 
     @staticmethod
     def draw_sweep(plot_widget, x_data, data, signal_type):
@@ -114,45 +135,66 @@ class PlotRenderer:
             mask = (f_probe >= excl.low) & (f_probe <= excl.high)
             plot_widget.plot(f_probe[mask], y_beatf[mask], pen=pg.mkPen(color='w', width=2))
 
-    @staticmethod
-    def draw_group_delays(plot_widget, beat_frequencies, exclusion_filters,
+    def draw_group_delays(self, plot_widget, beat_frequencies, exclusion_filters,
                           aggregated_hfs, aggregated_lfs):
-        """Draw the group delay plot with all beat frequencies."""
-        plot_widget.clear()
+        """Draw the group delay plot with all beat frequencies.
 
-        # Draw aggregated white lines
-        plot_widget.plot(aggregated_hfs.f_probe, aggregated_hfs.beat_time,
-                         pen=pg.mkPen(color='w', width=2))
-        plot_widget.plot(aggregated_lfs.f_probe, aggregated_lfs.beat_time,
-                         pen=pg.mkPen(color='w', width=2))
+        Uses persistent PlotDataItem curves updated via setData() to avoid
+        expensive clear() + plot() cycles.
+        """
+        if not self._gd_ready:
+            # First call: create all persistent curves in correct z-order
+            self._gd_agg_hfs = plot_widget.plot(pen=pg.mkPen(color='w', width=2))
+            self._gd_agg_lfs = plot_widget.plot(pen=pg.mkPen(color='w', width=2))
 
-        # Draw individual beat frequencies colored by side
+            for side in SIDES:
+                color = HFS_COLOR if side == 'HFS' else LFS_COLOR
+                excl_color = HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR
+                for band in BANDS:
+                    self._gd_band[(side, band)] = plot_widget.plot(
+                        pen=pg.mkPen(color=color, width=2))
+                    for i in range(_MAX_EXCL):
+                        self._gd_excl[(side, band, i)] = plot_widget.plot(
+                            pen=pg.mkPen(color=excl_color, width=2))
+
+            plot_widget.setLabel('bottom', 'Probing Frequency', units='Hz')
+            plot_widget.setLabel('left', 'Time Delay', units='s')
+            self._gd_ready = True
+
+        # Update aggregated lines
+        self._gd_agg_hfs.setData(aggregated_hfs.f_probe, aggregated_hfs.beat_time)
+        self._gd_agg_lfs.setData(aggregated_lfs.f_probe, aggregated_lfs.beat_time)
+
+        # Update per-band lines and exclusion overlays
         for side in SIDES:
-            color = HFS_COLOR if side == 'HFS' else LFS_COLOR
-            excl_color = HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR
-
+            excls = exclusion_filters[side]
             for band in BANDS:
                 bf = beat_frequencies[side][band]
-                plot_widget.plot(bf.f_probe, bf.y_beat_time,
-                                pen=pg.mkPen(color=color, width=2))
+                self._gd_band[(side, band)].setData(bf.f_probe, bf.y_beat_time)
 
-                # Draw exclusion highlights
-                for excl in exclusion_filters[side]:
-                    mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
-                    plot_widget.plot(bf.f_probe[mask], bf.y_beat_time[mask],
-                                    pen=pg.mkPen(color=excl_color, width=2))
+                for i in range(_MAX_EXCL):
+                    curve = self._gd_excl[(side, band, i)]
+                    if i < len(excls):
+                        excl = excls[i]
+                        mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
+                        curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
+                    else:
+                        curve.setData([], [])
 
-        plot_widget.setLabel('bottom', 'Probing Frequency', units='Hz')
-        plot_widget.setLabel('left', 'Time Delay', units='s')
+    def draw_profile(self, plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode):
+        """Draw density profile.
 
-    @staticmethod
-    def draw_profile(plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode):
-        """Draw density profile."""
-        plot_widget.clear()
-        plot_widget.plot(r_HFS, ne_HFS * 1e-19, pen=pg.mkPen(color=HFS_COLOR, width=2))
-        plot_widget.plot(r_LFS, ne_LFS * 1e-19, pen=pg.mkPen(color=LFS_COLOR, width=2))
+        Uses persistent PlotDataItem curves updated via setData().
+        """
+        if not self._prof_ready:
+            self._prof_hfs = plot_widget.plot(pen=pg.mkPen(color=HFS_COLOR, width=2))
+            self._prof_lfs = plot_widget.plot(pen=pg.mkPen(color=LFS_COLOR, width=2))
+            plot_widget.setLabel('left', 'density', units='1e19 m^-3')
+            self._prof_ready = True
+
+        self._prof_hfs.setData(r_HFS, ne_HFS * 1e-19)
+        self._prof_lfs.setData(r_LFS, ne_LFS * 1e-19)
 
         x_label = 'radius'
         x_units = 'm' if coordinate_mode == 'R (m)' else ''
         plot_widget.setLabel('bottom', x_label, units=x_units)
-        plot_widget.setLabel('left', 'density', units='1e19 m^-3')
