@@ -1,5 +1,6 @@
 import getpass
 import os
+import time
 import logging
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QFileDialog
@@ -302,6 +303,8 @@ class AppController(QObject):
 
     def _on_sweep_changed(self, source):
         """Sweep/timestamp change."""
+        t0 = time.perf_counter()
+
         p = self.panels
         m = self.model
         ts = m.time_stamps
@@ -330,15 +333,39 @@ class AppController(QObject):
             p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self._h_sweep_slider)
             p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
 
+        t1 = time.perf_counter()
+
+        # Pre-warm linearization cache for all 4 bands in parallel.
+        # Each cache miss costs ~80ms; 4 sequential = ~320ms, parallel = ~80ms.
+        m.prewarm_linearization_cache(m.detector.sweep)
+        t1b = time.perf_counter()
+
         m.initialize_limiters(m.detector.side, p.sweep.child('Timestamp').value())
+        t2 = time.perf_counter()
 
         self._recompute_sweep()
+        t3 = time.perf_counter()
 
         if not self._suppress_fft_updates:
             self._recompute_fft_and_display()
+            t4 = time.perf_counter()
+
             m.compute_all_beatf()
+            t5 = time.perf_counter()
+
             self._draw_group_delays()
+            t6 = time.perf_counter()
+
             self._draw_profile()
+            t7 = time.perf_counter()
+
+            logger.info(
+                "SWEEP TIMING: prewarm=%.1fms init=%.1fms sweep=%.1fms fft+display=%.1fms "
+                "all_beatf=%.1fms group_delays=%.1fms profile=%.1fms TOTAL=%.1fms",
+                (t1b - t1) * 1000, (t2 - t1b) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
+                (t5 - t4) * 1000, (t6 - t5) * 1000, (t7 - t6) * 1000,
+                (t7 - t0) * 1000,
+            )
 
     # --- FFT parameters ---
 
@@ -616,26 +643,35 @@ class AppController(QObject):
 
     def _recompute_sweep(self):
         """Compute sweep data and render."""
+        _t0 = time.perf_counter()
         self.model.compute_sweep()
+        _t1 = time.perf_counter()
         sw = self.model.current_sweep
         self.renderer.draw_sweep(self.view.plot_sweep, sw.x_data, sw.data, sw.signal_type)
+        _t2 = time.perf_counter()
+        logger.info(
+            "  _recompute_sweep: compute=%.1fms draw=%.1fms",
+            (_t1 - _t0) * 1000, (_t2 - _t1) * 1000,
+        )
 
     def _recompute_fft_and_display(self):
         """Compute FFT + display data and render spectrogram with all overlays."""
         self.model.compute_current_fft()
         self.model.compute_current_display()
-        self._draw_spectrogram()
+        self._draw_spectrogram_only()
 
     def _draw_spectrogram(self):
-        """Full spectrogram redraw including all overlays."""
+        """Recompute display data then redraw spectrogram. For standalone callers."""
+        self.model.compute_current_display()
+        self._draw_spectrogram_only()
+
+    def _draw_spectrogram_only(self):
+        """Render spectrogram with all overlays. Assumes display data is current."""
         m = self.model
         d = m.detector
         fft = m.current_fft
         sp = m.spect_params[d.side][d.band]
         filt = m.filters[d.side][d.band]
-
-        # Recompute display data (background subtraction + beatf) for visual-only changes
-        m.compute_current_display()
         disp = m.current_display
 
         scale = self.panels.fft.child('Scale').value()
