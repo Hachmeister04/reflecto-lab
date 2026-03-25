@@ -72,13 +72,23 @@ class PlotRenderer:
             Sxx_display = np.array(Sxx)
 
         # Prepare ImageItem transformation
+        f_probe_step = abs(f_probe[1] - f_probe[0])
+        f_beat_step = abs(f_beat[1] - f_beat[0])
+        
+        left_frequency_limit = f_probe[0] - f_probe_step / 2
+        right_frequency_limit = f_probe[-1] + f_probe_step / 2
+        
+        lower_frequency_limit = f_beat[0] - f_beat_step / 2
+        upper_frequency_limit = f_beat[-1] + f_beat_step / 2
+        
         transform = QtGui.QTransform()
-        alpha_x = (nperseg - noverlap) * abs(f[1] - f[0])
+        alpha_x = (right_frequency_limit - left_frequency_limit) / len(f_probe)
+        alpha_y = (upper_frequency_limit - lower_frequency_limit) / len(f_beat)
         transform.translate(
-            noverlap / 2 * abs(f[1] - f[0]) + f[0],
-            -fs / 2 if band == 'V' else 0,
+            left_frequency_limit,
+            lower_frequency_limit,
         )
-        transform.scale(alpha_x, abs(f_beat[1] - f_beat[0]))
+        transform.scale(alpha_x, alpha_y)
 
         # Create and add ImageItem
         img = pg.ImageItem(image=Sxx_display.T)
