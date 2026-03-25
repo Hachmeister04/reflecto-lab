@@ -83,11 +83,6 @@ def get_path_from_shot(shot):
     return f"/shares/experiments/aug-rawfiles/RTR/{shot // 10}/{shot}"
 
 
-@lru_cache(maxsize=50)
-def cached_get_linearization(*args, **kwargs):
-    return rpspy.get_linearization(*args, **kwargs, use_lookup_table=True)
-
-
 @lru_cache(maxsize=500)
 def cached_get_auto_linearization_from_shares(shot, band, sweep):
     return rpspy.get_linearization(shot, sweep, band, use_lookup_table=True)

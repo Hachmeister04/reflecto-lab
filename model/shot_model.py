@@ -2,10 +2,17 @@ import logging
 import json
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from scipy.signal import spectrogram
 from scipy.fft import fftshift
 import scipy.constants as cst
 import rpspy
+
+# Try to load from spectrofast for faster spectrogram computation; fall back to scipy if not available
+try:
+    from spectrofast import spectrogram as fast_spectrogram
+    def spectrogram(args, **kwargs):
+        return fast_spectrogram(args, **kwargs, planner="estimate", use_wisdom=False)
+except ImportError:
+    from scipy.signal import spectrogram
 
 from constants import (
     BANDS, SIDES,
