@@ -239,6 +239,8 @@ class AppController(QObject):
         p.sweep.child('Sweep nº').setLimits((1, len(ts)))
         p.sweep.child('Timestamp').setLimits((ts[0], ts[-1]))
         p.sweep.child('Timestamp').setOpts(step=ts[1])
+        bs = m.detector.burst_size
+        p.fft.child('Background sweep').setLimits((bs // 2, len(ts) - bs // 2 - 1))
         p.fft.child('nperseg').setLimits((MIN_NPERSEG, len(m.current_sweep.data) // 2))
         p.fft.child('noverlap').setLimits((0, p.fft.child('nperseg').value() - 1))
         p.fft.child('nfft').setLimits((p.fft.child('nperseg').value(), MAX_NFFT))
@@ -413,6 +415,7 @@ class AppController(QObject):
             p.sweep.child('Sweep').setLimits((lower_limit, upper_limit))
             p.sweep.child('Sweep nº').setLimits((lower_limit, upper_limit))
             p.sweep.child('Timestamp').setLimits((m.time_stamps[lower_limit - 1], m.time_stamps[upper_limit - 1]))
+            p.fft.child('Background sweep').setLimits((value // 2, len(m.time_stamps) - value // 2 - 1))
             self._suppress_fft_updates = False
 
         elif source == 'subtract_background':
