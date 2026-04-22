@@ -107,9 +107,9 @@ class ShotModel:
     def post_load_init(self):
         """Run after successful shot load: backgrounds, limiters, timestamps."""
         self.sampling_frequency = rpspy.get_sampling_frequency(self.shot, self.file_path)
+        self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
         self.compute_all_backgrounds()
         self._init_default_limiters()
-        self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
 
     def _init_default_limiters(self):
         """Set default limiter positions from rpspy."""
