@@ -48,6 +48,12 @@ class ReconstructionWorker(QObject):
                     if sp.subtract_dispersion:
                         subtract_dispersion_on_bands.append(f"{band}-{side}")
 
+            background_sweeps = {}
+            for side in ['HFS', 'LFS']:
+                background_sweeps[side] = {}
+                for band in ['K', 'Ka', 'Q', 'V']:
+                    background_sweeps[side][band] = params.spect_params[side][band].background_sweep
+
             # Convert filters from FilterRange objects to the list format rpspy expects
             filters_dict = {}
             for side in ['HFS', 'LFS']:
@@ -85,6 +91,7 @@ class ReconstructionWorker(QObject):
                 initialization_lfs=params.get_init_lfs,
                 initialization_hfs=params.get_init_hfs,
                 density_cutoff=params.density_cutoff if params.apply_density_cutoff else None,
+                background_sweeps=background_sweeps,
             )
 
             self.finished_signal.emit()

@@ -17,6 +17,7 @@ class SpectrogramParams:
     nfft: int = DEFAULT_NFFT
     subtract_background: bool = False
     subtract_dispersion: Optional[bool] = None
+    background_sweep: int = 0
 
     def to_config_dict(self):
         return {
@@ -25,6 +26,7 @@ class SpectrogramParams:
             'nfft': self.nfft,
             'subtract background': self.subtract_background,
             'subtract dispersion': self.subtract_dispersion,
+            'background sweep': self.background_sweep,
         }
 
     @classmethod
@@ -35,6 +37,7 @@ class SpectrogramParams:
             nfft=d['nfft'],
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
+            background_sweep=d.get('background sweep', 0),
         )
 
 

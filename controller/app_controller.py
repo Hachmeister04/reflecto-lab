@@ -95,6 +95,7 @@ class AppController(QObject):
         self._h_fft_nfft = lambda: self._on_fft_changed('nfft')
         self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
         self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
+        self._h_fft_bg_sweep = lambda: self._on_fft_changed('background_sweep')
         self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
         self._h_fft_low = lambda: self._on_fft_changed('low_filter')
         self._h_fft_high = lambda: self._on_fft_changed('high_filter')
@@ -104,6 +105,7 @@ class AppController(QObject):
         p.fft.child('burst size (odd)').sigValueChanged.connect(self._h_fft_burst)
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
+        p.fft.child('Background sweep').sigValueChanged.connect(self._h_fft_bg_sweep)
         p.fft.child('Subtract dispersion').sigValueChanged.connect(self._h_fft_sub_disp)
         p.fft.child('Color Map').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
@@ -153,6 +155,7 @@ class AppController(QObject):
         p.fft.child('nfft').setValue(sp.nfft, blockSignal=self._h_fft_nfft)
 
         p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._h_fft_sub_bg)
+        p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
         p.fft.child('Subtract dispersion').setValue(
             sp.subtract_dispersion if sp.subtract_dispersion is not None else False,
             blockSignal=self._h_fft_sub_disp,
@@ -414,6 +417,10 @@ class AppController(QObject):
 
         elif source == 'subtract_background':
             sp.subtract_background = p.fft.child('Subtract background').value()
+
+        elif source == 'background_sweep':
+            sp.background_sweep = int(p.fft.child('Background sweep').value())
+            p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
 
         elif source == 'subtract_dispersion':
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
