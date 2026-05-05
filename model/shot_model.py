@@ -460,6 +460,8 @@ class ShotModel:
 
             # Apply exclusion filters
             for excl in self.exclusion_filters[side]:
+                if not excl.enabled:
+                    continue
                 mask = (all_f_probe >= excl.low) & (all_f_probe <= excl.high) & (all_f_probe != 0)
                 all_f_probe = all_f_probe[~mask]
                 all_beat_time = all_beat_time[~mask]
@@ -554,7 +556,7 @@ class ShotModel:
 
         exclusions_dict = {}
         for side in SIDES:
-            exclusions_dict[side] = [excl.to_config_list() for excl in self.exclusion_filters[side]]
+            exclusions_dict[side] = [excl.to_config_list() for excl in self.exclusion_filters[side] if excl.enabled]
 
         data = {
             'parameters': params_dict,

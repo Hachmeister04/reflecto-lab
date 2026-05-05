@@ -58,13 +58,15 @@ class FilterRange:
 class ExclusionRange:
     low: float = 0.0
     high: float = 0.0
+    enabled: bool = True
 
     def to_config_list(self):
         return [self.low, self.high]
 
     @classmethod
     def from_config_list(cls, lst):
-        return cls(low=lst[0], high=lst[1])
+        # Loaded exclusions are always enabled.
+        return cls(low=lst[0], high=lst[1], enabled=True)
 
 
 @dataclass

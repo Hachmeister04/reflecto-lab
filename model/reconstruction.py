@@ -65,7 +65,7 @@ class ReconstructionWorker(QObject):
             # Convert exclusion filters from ExclusionRange objects to list format
             exclusion_dict = {}
             for side in ['HFS', 'LFS']:
-                exclusion_dict[side] = [[e.low, e.high] for e in params.exclusion_filters[side]]
+                exclusion_dict[side] = [[e.low, e.high] for e in params.exclusion_filters[side] if e.enabled]
 
             rpspy.full_profile_reconstruction(
                 shot=params.shot,

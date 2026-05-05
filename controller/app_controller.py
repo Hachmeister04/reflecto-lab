@@ -167,6 +167,7 @@ class AppController(QObject):
         for excl in m.exclusion_filters[d.side]:
             self._on_add_exclusion()
             children = p.fft.child('Exclude frequencies').children()
+            children[-1].child('Enabled').setValue(excl.enabled, blockSignal=self._on_exclusion_changed)
             children[-1].child('from').setValue(excl.low, blockSignal=self._on_exclusion_changed)
             children[-1].child('to').setValue(excl.high, blockSignal=self._on_exclusion_changed)
         self._suppress_exclusions = False
@@ -471,6 +472,7 @@ class AppController(QObject):
         if pos < 10:
             p.fft.child('Exclude frequencies').addChild({
                 'name': f'{pos + 1}', 'type': 'group', 'children': [
+                    {'name': 'Enabled', 'type': 'bool', 'value': True},
                     {'name': 'from', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
                     {'name': 'to', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
                     {'name': 'Remove', 'type': 'action'},
@@ -478,12 +480,13 @@ class AppController(QObject):
             })
 
             child = p.fft.child('Exclude frequencies').child(f'{pos + 1}')
+            child.child('Enabled').sigValueChanged.connect(self._on_exclusion_changed)
             child.child('from').sigValueChanged.connect(self._on_exclusion_changed)
             child.child('to').sigValueChanged.connect(self._on_exclusion_changed)
             child.child('Remove').sigActivated.connect(self._on_remove_exclusion)
 
             if not self._suppress_exclusions:
-                m.exclusion_filters[d.side].append(ExclusionRange(0.0, 0.0))
+                m.exclusion_filters[d.side].append(ExclusionRange(0.0, 0.0, True))
 
     def _on_remove_exclusion(self):
         """Remove an exclusion frequency range."""
@@ -523,6 +526,7 @@ class AppController(QObject):
         d = self.model.detector
         self.model.exclusion_filters[d.side][exclusion_num - 1].low = sender.parent().child('from').value()
         self.model.exclusion_filters[d.side][exclusion_num - 1].high = sender.parent().child('to').value()
+        self.model.exclusion_filters[d.side][exclusion_num - 1].enabled = sender.parent().child('Enabled').value()
 
         self._draw_spectrogram()
         self._draw_group_delays()

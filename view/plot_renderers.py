@@ -142,6 +142,8 @@ class PlotRenderer:
         plot_widget.plot(f_probe, y_beatf, pen=pg.mkPen(color='r', width=2))
 
         for excl in exclusion_filters:
+            if not excl.enabled:
+                continue
             mask = (f_probe >= excl.low) & (f_probe <= excl.high)
             plot_widget.plot(f_probe[mask], y_beatf[mask], pen=pg.mkPen(color='w', width=2))
 
@@ -184,7 +186,7 @@ class PlotRenderer:
 
                 for i in range(_MAX_EXCL):
                     curve = self._gd_excl[(side, band, i)]
-                    if i < len(excls):
+                    if i < len(excls) and excls[i].enabled:
                         excl = excls[i]
                         mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
                         curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
