@@ -3,7 +3,7 @@ import os
 import time
 import logging
 import numpy as np
-from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QApplication, QFileDialog
 from PyQt5.QtCore import QObject
 
 from constants import (
@@ -627,29 +627,14 @@ class AppController(QObject):
     def _on_save_config(self):
         """Save current configuration."""
         path = self.panels.config.child('Save').value()
-        if not path:
-            return
-        try:
-            self.model.save_config(path)
-        except Exception as e:
-            QMessageBox.warning(None, "Save Config Error", f"Could not save configuration:\n{e}")
-            return
+        self.model.save_config(path)
         self.panels.config.child('Save').setValue(path + ' (saved)', blockSignal=self._on_save_config)
         self.panels.config.child('Load').setValue('', blockSignal=self._on_load_config)
 
     def _on_load_config(self):
         """Load configuration from file."""
         path = self.panels.config.child('Load').value()
-        if not path:
-            return
-        try:
-            self.model.load_config(path)
-        except FileNotFoundError:
-            QMessageBox.warning(None, "Load Config Error", f"File not found:\n{path}")
-            return
-        except Exception as e:
-            QMessageBox.warning(None, "Load Config Error", f"Could not load configuration:\n{e}")
-            return
+        self.model.load_config(path)
         self._sync_params_to_panels()
 
         # Force change signal to handle sweep number and plot everything
