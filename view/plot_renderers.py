@@ -1,6 +1,6 @@
 import numpy as np
 import pyqtgraph as pg
-from pyqtgraph.Qt import QtGui
+from pyqtgraph.Qt import QtCore, QtGui, QtWidgets
 
 from constants import (
     BANDS, SIDES,
@@ -146,6 +146,33 @@ class PlotRenderer:
                 continue
             mask = (f_probe >= excl.low) & (f_probe <= excl.high)
             plot_widget.plot(f_probe[mask], y_beatf[mask], pen=pg.mkPen(color='w', width=2))
+
+    @staticmethod
+    def draw_exclusion_regions(plot_widget, regions, timestamp, f_probe, f_beat):
+        """Shade the 2D exclusion regions that are active for the current sweep.
+
+        Only regions that are enabled and whose time gate [t_min, t_max] contains
+        the current sweep ``timestamp`` are drawn (matching what compute_beatf
+        actually masks). Each is a single translucent rectangle, so the cost is
+        one graphics item per active region.
+        """
+        x_lo, x_hi = f_probe.min(), f_probe.max()
+        y_lo, y_hi = f_beat.min(), f_beat.max()
+
+        for reg in regions:
+            if not reg.enabled or not (reg.t_min <= timestamp <= reg.t_max):
+                continue
+            # Clamp to the visible spectrogram extents.
+            x0 = max(reg.f_prob_min, x_lo)
+            x1 = min(reg.f_prob_max, x_hi)
+            y0 = max(reg.f_beat_min, y_lo)
+            y1 = min(reg.f_beat_max, y_hi)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            rect = QtWidgets.QGraphicsRectItem(x0, y0, x1 - x0, y1 - y0)
+            rect.setBrush(pg.mkBrush(128, 128, 128, 128))   # neutral gray, alpha 0.5
+            rect.setPen(pg.mkPen('w', width=1, style=QtCore.Qt.DashLine))
+            plot_widget.addItem(rect)
 
     def draw_group_delays(self, plot_widget, beat_frequencies, exclusion_filters,
                           aggregated_hfs, aggregated_lfs):

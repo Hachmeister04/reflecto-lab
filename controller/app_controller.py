@@ -810,6 +810,13 @@ class AppController(QObject):
             m.exclusion_filters[d.side], d.side,
         )
 
+        # Shade the 2D exclusion regions active for the current sweep.
+        timestamp = m.time_stamps[d.sweep] if m.time_stamps is not None else 0
+        self.renderer.draw_exclusion_regions(
+            self.view.plot_spect, m.exclusion_regions[d.side][d.band],
+            timestamp, fft.f_probe, fft.f_beat,
+        )
+
     def _draw_group_delays(self):
         """Compute aggregated delays and render group delay plot."""
         m = self.model
