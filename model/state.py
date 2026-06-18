@@ -86,6 +86,23 @@ class ExclusionRegion:
     f_beat_max: float = 0.0
     enabled: bool = True
 
+    def to_config_list(self):
+        return [
+            self.t_min, self.t_max,
+            self.f_prob_min, self.f_prob_max,
+            self.f_beat_min, self.f_beat_max,
+            self.enabled,
+        ]
+
+    @classmethod
+    def from_config_list(cls, lst):
+        return cls(
+            t_min=lst[0], t_max=lst[1],
+            f_prob_min=lst[2], f_prob_max=lst[3],
+            f_beat_min=lst[4], f_beat_max=lst[5],
+            enabled=lst[6] if len(lst) > 6 else True,
+        )
+
 
 @dataclass
 class InitFileData:

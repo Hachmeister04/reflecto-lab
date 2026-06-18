@@ -584,11 +584,20 @@ class ShotModel:
         for side in SIDES:
             exclusions_dict[side] = [excl.to_config_list() for excl in self.exclusion_filters[side] if excl.enabled]
 
+        regions_dict = {}
+        for side in SIDES:
+            regions_dict[side] = {}
+            for band in BANDS:
+                regions_dict[side][band] = [
+                    reg.to_config_list() for reg in self.exclusion_regions[side][band]
+                ]
+
         data = {
             'parameters': params_dict,
             'filters': filters_dict,
             'burst_size': self.detector.burst_size,
             'exclusion_filters': exclusions_dict,
+            'exclusion_regions': regions_dict,
         }
 
         with open(path, 'w') as f:
@@ -621,3 +630,11 @@ class ShotModel:
                 self.exclusion_filters[side] = [
                     ExclusionRange.from_config_list(e) for e in exclusions[side]
                 ]
+
+        regions = data.get('exclusion_regions', {})
+        for side in SIDES:
+            for band in BANDS:
+                if side in regions and band in regions[side]:
+                    self.exclusion_regions[side][band] = [
+                        ExclusionRegion.from_config_list(r) for r in regions[side][band]
+                    ]
