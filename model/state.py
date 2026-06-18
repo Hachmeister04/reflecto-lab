@@ -70,6 +70,24 @@ class ExclusionRange:
 
 
 @dataclass
+class ExclusionRegion:
+    """A 2D region of the beat-frequency spectrogram to ignore during peak-finding.
+
+    The (t_min, t_max) range is shot/discharge time in seconds and gates which
+    sweeps the region applies to. (f_prob_min, f_prob_max) is the probing-frequency
+    extent (spectrogram x-axis) and (f_beat_min, f_beat_max) the beat-frequency
+    extent (spectrogram y-axis).
+    """
+    t_min: float = 0.0
+    t_max: float = 0.0
+    f_prob_min: float = 0.0
+    f_prob_max: float = 0.0
+    f_beat_min: float = 0.0
+    f_beat_max: float = 0.0
+    enabled: bool = True
+
+
+@dataclass
 class InitFileData:
     name: str = ''
     time: Optional[np.ndarray] = field(default=None, repr=False)

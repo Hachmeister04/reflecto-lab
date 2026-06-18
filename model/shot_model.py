@@ -20,7 +20,7 @@ from constants import (
     PROFILE_INVERSION_RESOLUTION,
 )
 from model.state import (
-    SpectrogramParams, FilterRange, ExclusionRange,
+    SpectrogramParams, FilterRange, ExclusionRange, ExclusionRegion,
     InitValues, InitFileData, BeatFrequencyData,
     CurrentSweepData, CurrentFFTData, CurrentDisplayData,
     AggregatedDelayData, DetectorSelection,
@@ -60,6 +60,9 @@ class ShotModel:
         # Per-side state
         self.exclusion_filters = {side: [] for side in SIDES}
         self.init_values = {side: InitValues() for side in SIDES}
+
+        # Per-detector (band+side) 2D spectrogram exclusion regions
+        self.exclusion_regions = {side: {band: [] for band in BANDS} for side in SIDES}
 
         # Current detector selection
         self.detector = DetectorSelection()
@@ -309,12 +312,33 @@ class ShotModel:
 
     # --- Beat frequency ---
 
-    def compute_beatf(self, band, side, Sxx, y_dis, f_beat, fs):
+    def compute_beatf(self, band, side, Sxx, y_dis, f_beat, fs, f_probe):
         """Compute beat frequency from spectrogram data."""
         filt = self.filters[side][band]
 
         Sxx[np.broadcast_to(f_beat[:, None], Sxx.shape) <= y_dis + filt.low] = Sxx.min()
         Sxx[np.broadcast_to(f_beat[:, None], Sxx.shape) >= y_dis + filt.high] = Sxx.min()
+
+        sxx_min = Sxx.min()
+
+        # ExclusionRange (per side, 1D in f_probe, no time gating): mask whole columns.
+        # These points are also dropped from the final curve in compute_aggregated_delays.
+        for excl in self.exclusion_filters[side]:
+            if not excl.enabled:
+                continue
+            cols = (f_probe >= excl.low) & (f_probe <= excl.high)
+            if cols.any():
+                Sxx[:, cols] = sxx_min
+
+        # ExclusionRegion (per band/side, 2D box, gated by the current sweep timestamp)
+        ts = self.time_stamps[self.detector.sweep]
+        for reg in self.exclusion_regions[side][band]:
+            if not reg.enabled or not (reg.t_min <= ts <= reg.t_max):
+                continue
+            cols = (f_probe >= reg.f_prob_min) & (f_probe <= reg.f_prob_max)
+            rows = (f_beat >= reg.f_beat_min) & (f_beat <= reg.f_beat_max)
+            if cols.any() and rows.any():
+                Sxx[np.ix_(rows, cols)] = sxx_min
 
         y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)
         y_max *= abs(f_beat[1] - f_beat[0])
@@ -352,7 +376,7 @@ class ShotModel:
             Sxx = self.background_subtract(Sxx, band, side)
 
         y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
-        y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs)
+        y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs, f_probe)
 
         df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
         y_beat_time = (y_beatf - y_dis) / df_dt
@@ -458,7 +482,9 @@ class ShotModel:
             all_beat_time = all_beat_time[~nan_mask]
             all_f_probe = all_f_probe[~nan_mask]
 
-            # Apply exclusion filters
+            # Apply exclusion filters (ExclusionRange): drop these f_probe points
+            # from the final curve. ExclusionRegions are handled upstream by masking
+            # the spectrogram in compute_beatf, so they are not dropped here.
             for excl in self.exclusion_filters[side]:
                 if not excl.enabled:
                     continue
@@ -530,7 +556,7 @@ class ShotModel:
         self.current_fft.Sxx = Sxx
 
         y_dis = self.compute_dispersion(d.band, d.side, fft.f_probe, fft.t, sp.subtract_dispersion)
-        y_beatf = self.compute_beatf(d.band, d.side, np.array(Sxx), y_dis, fft.f_beat, fft.fs)
+        y_beatf = self.compute_beatf(d.band, d.side, np.array(Sxx), y_dis, fft.f_beat, fft.fs, fft.f_probe)
 
         self.current_display = CurrentDisplayData(
             y_beatf=y_beatf,

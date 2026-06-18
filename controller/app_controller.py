@@ -11,7 +11,7 @@ from constants import (
     DECIMALS_EXCLUSIONS,
 )
 from model.shot_model import ShotModel
-from model.state import ReconstructionInput, ExclusionRange
+from model.state import ReconstructionInput, ExclusionRange, ExclusionRegion
 from view.main_window import MainWindowView
 from view.reconstruction_window import ReconstructionWindow
 from view.parameter_panels import ParameterPanels
@@ -111,6 +111,7 @@ class AppController(QObject):
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
         p.fft.child('Filters').child('High Filter').sigValueChanged.connect(self._h_fft_high)
         p.fft.child('Exclude frequencies').sigAddNew.connect(self._on_add_exclusion)
+        p.fft.child('Exclude region').sigAddNew.connect(self._on_add_exclusion_region)
 
         # Profiles
         p.profiles.child('Coordinates').sigValueChanged.connect(self._on_profile_coord_changed)
@@ -170,6 +171,22 @@ class AppController(QObject):
             children[-1].child('Enabled').setValue(excl.enabled, blockSignal=self._on_exclusion_changed)
             children[-1].child('from').setValue(excl.low, blockSignal=self._on_exclusion_changed)
             children[-1].child('to').setValue(excl.high, blockSignal=self._on_exclusion_changed)
+        self._suppress_exclusions = False
+
+        # Update 2D exclusion region UI (per band+side)
+        p.fft.child('Exclude region').clearChildren()
+        self._suppress_exclusions = True
+        for reg in m.exclusion_regions[d.side][d.band]:
+            self._on_add_exclusion_region()
+            children = p.fft.child('Exclude region').children()
+            last = children[-1]
+            last.child('Enabled').setValue(reg.enabled, blockSignal=self._on_exclusion_region_changed)
+            last.child('time_min').setValue(reg.t_min, blockSignal=self._on_exclusion_region_changed)
+            last.child('time_max').setValue(reg.t_max, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_prob_min').setValue(reg.f_prob_min, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_prob_max').setValue(reg.f_prob_max, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_beat_min').setValue(reg.f_beat_min, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_beat_max').setValue(reg.f_beat_max, blockSignal=self._on_exclusion_region_changed)
         self._suppress_exclusions = False
 
         # Update initialization panels
@@ -530,6 +547,94 @@ class AppController(QObject):
 
         self._draw_spectrogram()
         self._draw_group_delays()
+        self._draw_profile()
+
+    def _on_add_exclusion_region(self):
+        """Add a new 2D spectrogram exclusion region for the current detector."""
+        p = self.panels
+        m = self.model
+        d = m.detector
+
+        pos = len(p.fft.child('Exclude region').children())
+        if pos < 10:
+            p.fft.child('Exclude region').addChild({
+                'name': f'{pos + 1}', 'type': 'group', 'children': [
+                    {'name': 'Enabled', 'type': 'bool', 'value': True},
+                    {'name': 'time_min', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'time_max', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_prob_min', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_prob_max', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_beat_min', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_beat_max', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'Remove', 'type': 'action'},
+                ]
+            })
+
+            child = p.fft.child('Exclude region').child(f'{pos + 1}')
+            child.child('Enabled').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('time_min').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('time_max').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_prob_min').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_prob_max').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_beat_min').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_beat_max').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('Remove').sigActivated.connect(self._on_remove_exclusion_region)
+
+            if not self._suppress_exclusions:
+                # Default the time gate to the full shot span so a new region is
+                # active for the currently displayed sweep right away.
+                region = ExclusionRegion()
+                if m.time_stamps is not None and len(m.time_stamps):
+                    region.t_min = float(m.time_stamps[0])
+                    region.t_max = float(m.time_stamps[-1])
+                    child.child('time_min').setValue(region.t_min, blockSignal=self._on_exclusion_region_changed)
+                    child.child('time_max').setValue(region.t_max, blockSignal=self._on_exclusion_region_changed)
+                m.exclusion_regions[d.side][d.band].append(region)
+
+    def _on_remove_exclusion_region(self):
+        """Remove a 2D spectrogram exclusion region."""
+        sender = self.sender()
+
+        parent = sender.parent()
+        num_of_parent = int(parent.name())
+        p = self.panels
+        m = self.model
+        d = m.detector
+
+        p.fft.child('Exclude region').removeChild(parent)
+
+        # Renumber remaining regions
+        for i in range(num_of_parent, len(p.fft.child('Exclude region').children()) + 1):
+            p.fft.child('Exclude region').child(f'{i + 1}').setName(f'{i}')
+
+        # Remove from model
+        m.exclusion_regions[d.side][d.band].pop(num_of_parent - 1)
+
+        self._recompute_exclusion_regions()
+
+    def _on_exclusion_region_changed(self):
+        """A 2D spectrogram exclusion region value changed."""
+        sender = self.sender()
+
+        exclusion_num = int(sender.parent().name())
+        d = self.model.detector
+        region = self.model.exclusion_regions[d.side][d.band][exclusion_num - 1]
+        region.enabled = sender.parent().child('Enabled').value()
+        region.t_min = sender.parent().child('time_min').value()
+        region.t_max = sender.parent().child('time_max').value()
+        region.f_prob_min = sender.parent().child('f_prob_min').value()
+        region.f_prob_max = sender.parent().child('f_prob_max').value()
+        region.f_beat_min = sender.parent().child('f_beat_min').value()
+        region.f_beat_max = sender.parent().child('f_beat_max').value()
+
+        self._recompute_exclusion_regions()
+
+    def _recompute_exclusion_regions(self):
+        """Re-run peak-finding after a region change. Regions mask the spectrogram
+        before the max beat frequency is found, so a plain redraw is not enough."""
+        self._draw_spectrogram()         # compute_current_display + draw (current detector)
+        self.model.compute_all_beatf()   # refresh beat_frequencies for all detectors
+        self._draw_group_delays()        # compute_aggregated_delays + draw
         self._draw_profile()
 
     # --- Visual-only changes ---
