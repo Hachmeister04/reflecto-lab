@@ -321,14 +321,9 @@ class ShotModel:
 
         sxx_min = Sxx.min()
 
-        # ExclusionRange (per side, 1D in f_probe, no time gating): mask whole columns.
-        # These points are also dropped from the final curve in compute_aggregated_delays.
-        for excl in self.exclusion_filters[side]:
-            if not excl.enabled:
-                continue
-            cols = (f_probe >= excl.low) & (f_probe <= excl.high)
-            if cols.any():
-                Sxx[:, cols] = sxx_min
+        # ExclusionRange is intentionally NOT masked here: blanking a whole f_beat
+        # column makes the quadratic peak fit return NaN. Those points are dropped
+        # from the final curve in compute_aggregated_delays instead.
 
         # ExclusionRegion (per band/side, 2D box, gated by the current sweep timestamp)
         ts = self.time_stamps[self.detector.sweep]
