@@ -612,9 +612,25 @@ class AppController(QObject):
 
         self._recompute_exclusion_regions()
 
+    # min -> max partner for each region bound pair
+    _REGION_PAIRS = {
+        'time_min': 'time_max', 'time_max': 'time_min',
+        'f_prob_min': 'f_prob_max', 'f_prob_max': 'f_prob_min',
+        'f_beat_min': 'f_beat_max', 'f_beat_max': 'f_beat_min',
+    }
+
     def _on_exclusion_region_changed(self):
         """A 2D spectrogram exclusion region value changed."""
         sender = self.sender()
+
+        # Keep each min <= max: editing a min above its max bumps the max up,
+        # editing a max below its min bumps the min down (mirrors exclusion ranges).
+        if sender.name() in self._REGION_PAIRS:
+            partner = sender.parent().child(self._REGION_PAIRS[sender.name()])
+            if sender.name().endswith('_min') and sender.value() > partner.value():
+                partner.setValue(sender.value(), blockSignal=self._on_exclusion_region_changed)
+            elif sender.name().endswith('_max') and sender.value() < partner.value():
+                partner.setValue(sender.value(), blockSignal=self._on_exclusion_region_changed)
 
         exclusion_num = int(sender.parent().name())
         d = self.model.detector
