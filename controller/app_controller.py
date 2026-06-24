@@ -96,6 +96,7 @@ class AppController(QObject):
         self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
         self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
         self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
+        self._h_fft_ml = lambda: self._on_fft_changed('ml_denoising')
         self._h_fft_low = lambda: self._on_fft_changed('low_filter')
         self._h_fft_high = lambda: self._on_fft_changed('high_filter')
         p.fft.child('nperseg').sigValueChanged.connect(self._h_fft_nperseg)
@@ -105,6 +106,7 @@ class AppController(QObject):
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
         p.fft.child('Subtract dispersion').sigValueChanged.connect(self._h_fft_sub_disp)
+        p.fft.child('ML denoising').sigValueChanged.connect(self._h_fft_ml)
         p.fft.child('Color Map').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
         p.fft.child('Filters').child('High Filter').sigValueChanged.connect(self._h_fft_high)
@@ -418,6 +420,9 @@ class AppController(QObject):
         elif source == 'subtract_dispersion':
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
 
+        elif source == 'ml_denoising':
+            m.ml_denoising_enabled = p.fft.child('ML denoising').value()
+
         elif source == 'low_filter':
             filt.low = p.fft.child('Filters').child('Low Filter').value()
             if fft.f_beat is not None and filt.low + abs(fft.f_beat[1] - fft.f_beat[0]) >= filt.high:
@@ -432,7 +437,7 @@ class AppController(QObject):
 
         # Trigger appropriate updates
         if not self._suppress_fft_updates:
-            if source in ('low_filter', 'high_filter', 'subtract_background'):
+            if source in ('low_filter', 'high_filter', 'subtract_background', 'ml_denoising'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
             elif source == 'burst_size':
