@@ -290,12 +290,6 @@ class AppController(QObject):
         self._sync_detector_from_panels()
         self._sync_params_to_panels()
 
-        if source == 'band':
-            if p.detector.child('Band').value() == 'V':
-                p.fft.child('Subtract dispersion').setOpts(enabled=True)
-            else:
-                p.fft.child('Subtract dispersion').setOpts(enabled=False)
-
         self._recompute_sweep()
         self._recompute_fft_and_display()
 

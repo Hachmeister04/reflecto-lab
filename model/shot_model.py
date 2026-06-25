@@ -43,7 +43,7 @@ class ShotModel:
         self.spect_params = {
             side: {
                 band: SpectrogramParams(
-                    subtract_dispersion=True if band == 'V' else None
+                    subtract_dispersion=True if band == 'V' else False
                 ) for band in BANDS
             } for side in SIDES
         }
@@ -263,20 +263,22 @@ class ShotModel:
         else:
             corrected_burst = linearized_burst
 
+        two_sided = np.iscomplexobj(corrected_burst)
+
         f_beat, t, Sxx = spectrogram(
             corrected_burst,
             fs=fs,
             nperseg=nperseg,
             noverlap=noverlap,
             nfft=nfft,
-            return_onesided=False if corrected_burst.dtype == complex else True,
+            return_onesided=not two_sided,
             detrend=False,
             window='boxcar',
         )
 
         f_probe = np.interp(t, np.arange(len(f)) / fs, f)
 
-        if band == 'V':
+        if two_sided:
             f_beat = fftshift(f_beat)
             Sxx = fftshift(Sxx, axes=-2)
 
@@ -301,7 +303,7 @@ class ShotModel:
 
     def compute_dispersion(self, band, side, f_probe, t, subtract):
         """Compute dispersion for the selected band and side."""
-        if band == 'V' and subtract is True:
+        if subtract is True:
             return np.zeros(len(f_probe))
         else:
             k = (f_probe[-1] - f_probe[0]) / (t[-1] - t[0])
@@ -319,8 +321,9 @@ class ShotModel:
         y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)
         y_max *= abs(f_beat[1] - f_beat[0])
 
-        if band == 'V':
-            y_max += -fs / 2
+        # For two-sided (fftshifted) spectrograms, f_beat[0] = -fs/2; shift index→frequency.
+        if f_beat[0] < 0:
+            y_max += f_beat[0]
 
         return y_max
 
