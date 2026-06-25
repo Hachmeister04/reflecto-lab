@@ -76,6 +76,10 @@ class ShotModel:
         # Cached shot-level data
         self.sampling_frequency = None
 
+        # ML denoising
+        self.ml_denoising_enabled = False
+        self._ml_denoisers = {}
+
         # Persistent thread pool for parallel computation
         self._executor = ThreadPoolExecutor(max_workers=4)
 
@@ -418,6 +422,43 @@ class ShotModel:
             for band in BANDS:
                 self.compute_background(band, side)
 
+    def apply_ml_denoising(self, Sxx, band):
+        """Run the CNN denoiser over Sxx. Only supported for band 'K';
+        other bands are returned unchanged. Sxx is resized to the model's
+        20x29 input, denoised, then resized back and rescaled to the
+        original magnitude range so colormap behavior is preserved.
+        """
+        if band != 'K':
+            return Sxx
+
+        from scipy.ndimage import zoom
+        from model.ml_denoiser import MLdenoising, SPEC_H, SPEC_W
+
+        try:
+            denoiser = self._ml_denoisers.get(band)
+            if denoiser is None:
+                denoiser = MLdenoising(band)
+                self._ml_denoisers[band] = denoiser
+        except (FileNotFoundError, OSError) as e:
+            logger.warning("ML denoising unavailable: %s", e)
+            return Sxx
+
+        h, w = Sxx.shape
+        if (h, w) == (SPEC_H, SPEC_W):
+            resized = Sxx.astype(np.float32)
+        else:
+            resized = zoom(Sxx.astype(np.float32), (SPEC_H / h, SPEC_W / w), order=1)
+
+        denoised = denoiser.run(resized)[0]  # shape (20, 29), values in [0, 1]
+
+        orig_min, orig_max = float(Sxx.min()), float(Sxx.max())
+        denoised = denoised * (orig_max - orig_min) + orig_min
+
+        if (h, w) != (SPEC_H, SPEC_W):
+            denoised = zoom(denoised, (h / SPEC_H, w / SPEC_W), order=1)
+
+        return denoised
+
     def background_subtract(self, Sxx, band, side):
         """Subtract background from spectrogram."""
         return np.clip(
@@ -521,6 +562,10 @@ class ShotModel:
             Sxx = self.background_subtract(np.array(fft.unfiltered_Sxx), d.band, d.side)
         else:
             Sxx = np.array(fft.unfiltered_Sxx)
+
+        if self.ml_denoising_enabled:
+            Sxx = self.apply_ml_denoising(Sxx, d.band)
+
         self.current_fft.Sxx = Sxx
 
         y_dis = self.compute_dispersion(d.band, d.side, fft.f_probe, fft.t, sp.subtract_dispersion)

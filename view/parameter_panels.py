@@ -55,6 +55,7 @@ class ParameterPanels:
             {'name': 'Scale', 'type': 'checklist', 'limits': ['Normalized', 'Linear', 'Logarithmic'], 'exclusive': True, 'delay': 0},
             {'name': 'Subtract background', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Subtract dispersion', 'type': 'bool', 'value': False, 'delay': 0},
+            {'name': 'ML denoising', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'},
             {'name': 'Filters', 'title': 'Filters (above dispersion)', 'type': 'group', 'children': [
                 {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
