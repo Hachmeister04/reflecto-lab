@@ -422,27 +422,36 @@ class ShotModel:
             for band in BANDS:
                 self.compute_background(band, side)
 
-    def apply_ml_denoising(self, Sxx, band, side):
+    def apply_ml_denoising(self, Sxx, f_beat, band, side):
         """Run the CNN denoiser over the first SPEC_H positive-frequency rows
-        of Sxx. Only supported for (band, side) pairs that have trained weights;
-        other combinations are returned unchanged. Caller is responsible for
-        enforcing the spectrogram parameters required to make Sxx's shape
-        compatible (nperseg=128, noverlap=96, nfft=512, subtract_dispersion=True).
-        Returns Sxx with rows [0:SPEC_H] replaced by denoised, magnitude-rescaled
-        values and the remaining rows untouched.
+        of Sxx (including the zero-frequency row). Only supported for
+        (band, side) pairs that have trained weights; other combinations are
+        returned unchanged. Caller is responsible for enforcing the spectrogram
+        parameters required to make the cropped region's shape compatible
+        (nperseg=128, noverlap=96, nfft=512, subtract_dispersion=True).
+
+        Returns:
+            tuple (Sxx, denoised_slice). Sxx has the denoised, magnitude-rescaled
+            values written into rows denoised_slice; other rows are untouched.
+            denoised_slice is None when denoising was skipped.
         """
         from model.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
 
         if (band, side) not in WEIGHTS_BY_BAND_SIDE:
-            return Sxx
+            return Sxx, None
 
-        h, w = Sxx.shape
-        if h < SPEC_H or w != SPEC_W:
+        # Locate the first row at or above 0 Hz. For one-sided spectra this is
+        # row 0; for two-sided fftshifted spectra (which K becomes when the
+        # complex dispersion correction is applied) this is the DC bin in the
+        # middle of f_beat.
+        zero_idx = int(np.searchsorted(f_beat, 0.0))
+        if zero_idx + SPEC_H > Sxx.shape[0] or Sxx.shape[1] != SPEC_W:
             logger.warning(
-                "ML denoising skipped: Sxx shape %s incompatible with model input (%d, %d)",
-                (h, w), SPEC_H, SPEC_W,
+                "ML denoising skipped: Sxx shape %s with zero-row %d incompatible "
+                "with model input (%d, %d)",
+                Sxx.shape, zero_idx, SPEC_H, SPEC_W,
             )
-            return Sxx
+            return Sxx, None
 
         key = (band, side)
         try:
@@ -452,17 +461,18 @@ class ShotModel:
                 self._ml_denoisers[key] = denoiser
         except (FileNotFoundError, OSError) as e:
             logger.warning("ML denoising unavailable: %s", e)
-            return Sxx
+            return Sxx, None
 
-        cropped = Sxx[:SPEC_H, :].astype(np.float32)
+        denoised_slice = slice(zero_idx, zero_idx + SPEC_H)
+        cropped = Sxx[denoised_slice, :].astype(np.float32)
         denoised = denoiser.run(cropped)[0]  # shape (SPEC_H, SPEC_W), values in [0, 1]
 
         orig_min, orig_max = float(cropped.min()), float(cropped.max())
         denoised = denoised * (orig_max - orig_min) + orig_min
 
         result = Sxx.astype(np.float64, copy=True)
-        result[:SPEC_H, :] = denoised
-        return result
+        result[denoised_slice, :] = denoised
+        return result, denoised_slice
 
     def background_subtract(self, Sxx, band, side):
         """Subtract background from spectrogram."""
@@ -568,18 +578,22 @@ class ShotModel:
         else:
             Sxx = np.array(fft.unfiltered_Sxx)
 
-        denoised_rows = 0
+        denoised_slice = None
         if self.ml_denoising_enabled:
-            from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE, SPEC_H
+            from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
             if (d.band, d.side) in WEIGHTS_BY_BAND_SIDE:
-                Sxx = self.apply_ml_denoising(Sxx, d.band, d.side)
-                denoised_rows = min(SPEC_H, Sxx.shape[0])
+                Sxx, denoised_slice = self.apply_ml_denoising(
+                    Sxx, fft.f_beat, d.band, d.side,
+                )
 
-        if denoised_rows and denoised_rows < Sxx.shape[0]:
+        if denoised_slice is not None:
             display_Sxx = Sxx.astype(np.float64, copy=True)
-            positive = display_Sxx[display_Sxx > 0]
+            denoised_region = display_Sxx[denoised_slice, :]
+            positive = denoised_region[denoised_region > 0]
             fill = float(positive.min()) if positive.size else 1.0
-            display_Sxx[denoised_rows:, :] = fill
+            mask = np.ones(display_Sxx.shape[0], dtype=bool)
+            mask[denoised_slice] = False
+            display_Sxx[mask, :] = fill
             self.current_fft.Sxx = display_Sxx
         else:
             self.current_fft.Sxx = Sxx
