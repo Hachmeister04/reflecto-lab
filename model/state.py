@@ -17,6 +17,7 @@ class SpectrogramParams:
     nfft: int = DEFAULT_NFFT
     subtract_background: bool = False
     subtract_dispersion: Optional[bool] = None
+    ml_denoising: bool = False
 
     def to_config_dict(self):
         return {
@@ -25,6 +26,7 @@ class SpectrogramParams:
             'nfft': self.nfft,
             'subtract background': self.subtract_background,
             'subtract dispersion': self.subtract_dispersion,
+            'ml denoising': self.ml_denoising,
         }
 
     @classmethod
@@ -35,6 +37,7 @@ class SpectrogramParams:
             nfft=d['nfft'],
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
+            ml_denoising=d.get('ml denoising', False),
         )
 
 

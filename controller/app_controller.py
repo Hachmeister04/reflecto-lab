@@ -135,18 +135,18 @@ class AppController(QObject):
         'nperseg': 128, 'noverlap': 96, 'nfft': 512, 'subtract_dispersion': True,
     }
 
-    def _enforce_ml_denoising_params(self):
-        """Force the spect_params required by the ML denoiser on every
-        (band, side) pair that has trained weights available.
+    def _enforce_ml_denoising_params_for(self, band, side):
+        """Force the spect_params required by the ML denoiser on a single
+        (band, side) pair. No-op if that pair has no trained weights.
         """
         from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
-        m = self.model
-        for band, side in WEIGHTS_BY_BAND_SIDE:
-            sp = m.spect_params[side][band]
-            sp.nperseg = self._ML_REQUIRED_PARAMS['nperseg']
-            sp.noverlap = self._ML_REQUIRED_PARAMS['noverlap']
-            sp.nfft = self._ML_REQUIRED_PARAMS['nfft']
-            sp.subtract_dispersion = self._ML_REQUIRED_PARAMS['subtract_dispersion']
+        if (band, side) not in WEIGHTS_BY_BAND_SIDE:
+            return
+        sp = self.model.spect_params[side][band]
+        sp.nperseg = self._ML_REQUIRED_PARAMS['nperseg']
+        sp.noverlap = self._ML_REQUIRED_PARAMS['noverlap']
+        sp.nfft = self._ML_REQUIRED_PARAMS['nfft']
+        sp.subtract_dispersion = self._ML_REQUIRED_PARAMS['subtract_dispersion']
 
     def _current_supports_ml(self):
         """True when the current (band, side) has ML denoiser weights."""
@@ -154,15 +154,15 @@ class AppController(QObject):
         d = self.model.detector
         return (d.band, d.side) in WEIGHTS_BY_BAND_SIDE
 
-    def _apply_ml_denoising_lock(self, locked):
-        """Make the ML-enforced FFT controls read-only when locked and the
-        current (band, side) has ML weights available. Other selections keep
-        their controls editable.
+    def _apply_ml_denoising_lock(self):
+        """Make the ML-enforced FFT controls read-only when the current
+        (band, side) has ML denoising enabled AND has trained weights.
         """
         from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
         p = self.panels
         d = self.model.detector
-        readonly = bool(locked) and (d.band, d.side) in WEIGHTS_BY_BAND_SIDE
+        sp = self.model.spect_params[d.side][d.band]
+        readonly = sp.ml_denoising and (d.band, d.side) in WEIGHTS_BY_BAND_SIDE
         for name in ('nperseg', 'noverlap', 'nfft', 'Subtract dispersion'):
             p.fft.child(name).setOpts(readonly=readonly)
 
@@ -195,9 +195,10 @@ class AppController(QObject):
             sp.subtract_dispersion if sp.subtract_dispersion is not None else False,
             blockSignal=self._h_fft_sub_disp,
         )
+        p.fft.child('ML denoising').setValue(sp.ml_denoising, blockSignal=self._h_fft_ml)
 
-        # ML-denoising lock state depends on the current band
-        self._apply_ml_denoising_lock(m.ml_denoising_enabled)
+        # ML-denoising lock state follows the current band/side
+        self._apply_ml_denoising_lock()
 
         # Update exclusion filter UI
         p.fft.child('Exclude frequencies').clearChildren()
@@ -454,13 +455,14 @@ class AppController(QObject):
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
 
         elif source == 'ml_denoising':
-            m.ml_denoising_enabled = p.fft.child('ML denoising').value()
-            if m.ml_denoising_enabled:
-                self._enforce_ml_denoising_params()
+            sp.ml_denoising = p.fft.child('ML denoising').value()
+            if sp.ml_denoising:
+                # Enforce required FFT params for the current band/side only.
+                self._enforce_ml_denoising_params_for(d.band, d.side)
                 # Re-sync because we may have changed sp values for current band/side
                 self._sync_params_to_panels()
             else:
-                self._apply_ml_denoising_lock(False)
+                self._apply_ml_denoising_lock()
 
         elif source == 'low_filter':
             filt.low = p.fft.child('Filters').child('Low Filter').value()
@@ -476,8 +478,8 @@ class AppController(QObject):
 
         # Trigger appropriate updates
         if not self._suppress_fft_updates:
-            if source == 'ml_denoising' and m.ml_denoising_enabled and self._current_supports_ml():
-                # Enforcement changed FFT params for current K band — need a full recompute.
+            if source == 'ml_denoising' and sp.ml_denoising and self._current_supports_ml():
+                # Enforcement changed FFT params for the current band/side — need a full recompute.
                 m.compute_background(d.band, d.side)
                 self._recompute_fft_and_display()
                 m.compute_one_beatf(d.band, d.side)

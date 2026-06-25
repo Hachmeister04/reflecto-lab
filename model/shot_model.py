@@ -76,8 +76,8 @@ class ShotModel:
         # Cached shot-level data
         self.sampling_frequency = None
 
-        # ML denoising
-        self.ml_denoising_enabled = False
+        # ML denoising — per-(band, side) denoiser instances; the enable flag
+        # itself lives on SpectrogramParams so it follows the detector.
         self._ml_denoisers = {}
 
         # Persistent thread pool for parallel computation
@@ -358,6 +358,11 @@ class ShotModel:
         if sp.subtract_background:
             Sxx = self.background_subtract(Sxx, band, side)
 
+        if sp.ml_denoising:
+            from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
+            if (band, side) in WEIGHTS_BY_BAND_SIDE:
+                Sxx, _ = self.apply_ml_denoising(Sxx, f_beat, band, side)
+
         y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
         y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs)
 
@@ -579,7 +584,7 @@ class ShotModel:
             Sxx = np.array(fft.unfiltered_Sxx)
 
         denoised_slice = None
-        if self.ml_denoising_enabled:
+        if sp.ml_denoising:
             from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
             if (d.band, d.side) in WEIGHTS_BY_BAND_SIDE:
                 Sxx, denoised_slice = self.apply_ml_denoising(
