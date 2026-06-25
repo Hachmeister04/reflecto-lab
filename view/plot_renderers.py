@@ -61,8 +61,8 @@ class PlotRenderer:
         # Scale the spectrogram
         if scale == 'Normalized':
             Sxx_display = np.array(Sxx)
-            max_vals = np.max(Sxx_display, axis=0)
-            max_vals[max_vals == 0] = 1
+            max_vals = np.nanmax(Sxx_display, axis=0)
+            max_vals[(max_vals == 0) | np.isnan(max_vals)] = 1
             Sxx_display = Sxx_display / max_vals
         elif scale == 'Linear':
             Sxx_display = np.array(Sxx)
@@ -101,12 +101,12 @@ class PlotRenderer:
         try:
             existing_colorbar.setImageItem(img)
             existing_colorbar.setColorMap(colormap)
-            existing_colorbar.setLevels(values=(np.min(Sxx_display), np.max(Sxx_display)))
+            existing_colorbar.setLevels(values=(np.nanmin(Sxx_display), np.nanmax(Sxx_display)))
             colorbar = existing_colorbar
         except (AttributeError, TypeError):
             colorbar = plot_widget.addColorBar(
                 img, colorMap=colormap,
-                values=(np.min(Sxx_display), np.max(Sxx_display)),
+                values=(np.nanmin(Sxx_display), np.nanmax(Sxx_display)),
             )
 
         # Configure plot appearance

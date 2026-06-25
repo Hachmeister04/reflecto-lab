@@ -422,42 +422,47 @@ class ShotModel:
             for band in BANDS:
                 self.compute_background(band, side)
 
-    def apply_ml_denoising(self, Sxx, band):
-        """Run the CNN denoiser over Sxx. Only supported for band 'K';
-        other bands are returned unchanged. Sxx is resized to the model's
-        20x29 input, denoised, then resized back and rescaled to the
-        original magnitude range so colormap behavior is preserved.
+    def apply_ml_denoising(self, Sxx, band, side):
+        """Run the CNN denoiser over the first SPEC_H positive-frequency rows
+        of Sxx. Only supported for (band, side) pairs that have trained weights;
+        other combinations are returned unchanged. Caller is responsible for
+        enforcing the spectrogram parameters required to make Sxx's shape
+        compatible (nperseg=128, noverlap=96, nfft=512, subtract_dispersion=True).
+        Returns Sxx with rows [0:SPEC_H] replaced by denoised, magnitude-rescaled
+        values and the remaining rows untouched.
         """
-        if band != 'K':
+        from model.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
+
+        if (band, side) not in WEIGHTS_BY_BAND_SIDE:
             return Sxx
 
-        from scipy.ndimage import zoom
-        from model.ml_denoiser import MLdenoising, SPEC_H, SPEC_W
+        h, w = Sxx.shape
+        if h < SPEC_H or w != SPEC_W:
+            logger.warning(
+                "ML denoising skipped: Sxx shape %s incompatible with model input (%d, %d)",
+                (h, w), SPEC_H, SPEC_W,
+            )
+            return Sxx
 
+        key = (band, side)
         try:
-            denoiser = self._ml_denoisers.get(band)
+            denoiser = self._ml_denoisers.get(key)
             if denoiser is None:
-                denoiser = MLdenoising(band)
-                self._ml_denoisers[band] = denoiser
+                denoiser = MLdenoising(band, side)
+                self._ml_denoisers[key] = denoiser
         except (FileNotFoundError, OSError) as e:
             logger.warning("ML denoising unavailable: %s", e)
             return Sxx
 
-        h, w = Sxx.shape
-        if (h, w) == (SPEC_H, SPEC_W):
-            resized = Sxx.astype(np.float32)
-        else:
-            resized = zoom(Sxx.astype(np.float32), (SPEC_H / h, SPEC_W / w), order=1)
+        cropped = Sxx[:SPEC_H, :].astype(np.float32)
+        denoised = denoiser.run(cropped)[0]  # shape (SPEC_H, SPEC_W), values in [0, 1]
 
-        denoised = denoiser.run(resized)[0]  # shape (20, 29), values in [0, 1]
-
-        orig_min, orig_max = float(Sxx.min()), float(Sxx.max())
+        orig_min, orig_max = float(cropped.min()), float(cropped.max())
         denoised = denoised * (orig_max - orig_min) + orig_min
 
-        if (h, w) != (SPEC_H, SPEC_W):
-            denoised = zoom(denoised, (h / SPEC_H, w / SPEC_W), order=1)
-
-        return denoised
+        result = Sxx.astype(np.float64, copy=True)
+        result[:SPEC_H, :] = denoised
+        return result
 
     def background_subtract(self, Sxx, band, side):
         """Subtract background from spectrogram."""
@@ -563,10 +568,19 @@ class ShotModel:
         else:
             Sxx = np.array(fft.unfiltered_Sxx)
 
+        denoised_rows = 0
         if self.ml_denoising_enabled:
-            Sxx = self.apply_ml_denoising(Sxx, d.band)
+            from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE, SPEC_H
+            if (d.band, d.side) in WEIGHTS_BY_BAND_SIDE:
+                Sxx = self.apply_ml_denoising(Sxx, d.band, d.side)
+                denoised_rows = min(SPEC_H, Sxx.shape[0])
 
-        self.current_fft.Sxx = Sxx
+        if denoised_rows and denoised_rows < Sxx.shape[0]:
+            display_Sxx = Sxx.astype(np.float64, copy=True)
+            display_Sxx[denoised_rows:, :] = np.nan
+            self.current_fft.Sxx = display_Sxx
+        else:
+            self.current_fft.Sxx = Sxx
 
         y_dis = self.compute_dispersion(d.band, d.side, fft.f_probe, fft.t, sp.subtract_dispersion)
         y_beatf = self.compute_beatf(d.band, d.side, np.array(Sxx), y_dis, fft.f_beat, fft.fs)

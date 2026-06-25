@@ -87,19 +87,28 @@ def _weights_path(filename):
     return filename
 
 
+WEIGHTS_BY_BAND_SIDE = {
+    ('K', 'HFS'): 'v2.2_K_HFS_1500.pth',
+}
+
+
 class MLdenoising():
-    def __init__(self, band):
+    def __init__(self, band, side):
         self.band = band
-        global denoiser
-        denoiser = Denoiser().to(DEVICE)
-        if band == 'K':
-            weights = _weights_path('v2.2_K_HFS_1500.pth')
-            major, minor = map(int, torch.__version__.split('+')[0].split('.')[:2])
-            if (major, minor) >= (2, 0):
-                denoiser.load_state_dict(torch.load(weights, map_location=DEVICE))
-            else:
-                denoiser.load_state_dict(torch.load(weights))
-        denoiser.eval()
+        self.side = side
+        weights_name = WEIGHTS_BY_BAND_SIDE.get((band, side))
+        if weights_name is None:
+            raise FileNotFoundError(
+                f"No ML denoiser weights available for band={band}, side={side}"
+            )
+        self.denoiser = Denoiser().to(DEVICE)
+        weights = _weights_path(weights_name)
+        major, minor = map(int, torch.__version__.split('+')[0].split('.')[:2])
+        if (major, minor) >= (2, 0):
+            self.denoiser.load_state_dict(torch.load(weights, map_location=DEVICE))
+        else:
+            self.denoiser.load_state_dict(torch.load(weights))
+        self.denoiser.eval()
 
     def run(self, input_spectrogram):
         if isinstance(input_spectrogram, np.ndarray):
@@ -118,13 +127,12 @@ class MLdenoising():
         size = len(self.arr)
         noisy_specs = self.normalize_array(self.arr.astype(np.float32))
 
-        global final_output
-        final_output = np.zeros((size, 20, 29))
+        final_output = np.zeros((size, SPEC_H, SPEC_W))
 
         with torch.no_grad():
             for i in range(size):
-                noisy_specs_HFS = torch.FloatTensor(noisy_specs[i]).unsqueeze(0).unsqueeze(0).to(DEVICE)
-                denoised_data = denoiser(noisy_specs_HFS)
+                noisy_spec = torch.FloatTensor(noisy_specs[i]).unsqueeze(0).unsqueeze(0).to(DEVICE)
+                denoised_data = self.denoiser(noisy_spec)
                 final_output[i] = denoised_data.cpu().numpy()
         return final_output
 
