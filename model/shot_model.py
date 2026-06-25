@@ -577,7 +577,9 @@ class ShotModel:
 
         if denoised_rows and denoised_rows < Sxx.shape[0]:
             display_Sxx = Sxx.astype(np.float64, copy=True)
-            display_Sxx[denoised_rows:, :] = np.nan
+            positive = display_Sxx[display_Sxx > 0]
+            fill = float(positive.min()) if positive.size else 1.0
+            display_Sxx[denoised_rows:, :] = fill
             self.current_fft.Sxx = display_Sxx
         else:
             self.current_fft.Sxx = Sxx
