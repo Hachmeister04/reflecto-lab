@@ -8,7 +8,9 @@ from PyQt5.QtCore import QObject
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
-    DECIMALS_EXCLUSIONS,
+    DECIMALS_EXCLUSIONS, 
+    DEFAULT_PREFIX_HDF5, DEFAULT_POSTFIX_HDF5, DEFAULT_FOLDER_HDF5,
+    DEFAULT_PREFIX_CONFIG, DEFAULT_POSTFIX_CONFIG, DEFAULT_FOLDER_CONFIG
 )
 from model.shot_model import ShotModel
 from model.state import ReconstructionInput, ExclusionRange, ExclusionRegion
@@ -267,6 +269,9 @@ class AppController(QObject):
         p.fft.child('Filters').child('High Filter').setLimits((abs(fft.f_beat[0] - fft.f_beat[1]), np.inf))
         p.reconstruct.child('Start Time').setLimits((0, len(ts) * (ts[1] - ts[0])))
         p.reconstruct.child('End Time').setLimits((0, len(ts) * (ts[1] - ts[0])))
+
+        default_cfg_name = f"{DEFAULT_PREFIX_CONFIG}{self.model.shot}{DEFAULT_POSTFIX_CONFIG}"
+        p.config.child('Save').setOpts(selectFile=default_cfg_name)
 
     # --- Initialization ---
 
@@ -701,7 +706,7 @@ class AppController(QObject):
 
         # If HDF5 is enabled, let the user choose the output directory and filename
         if write_hdf5:
-            default_name = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/reconstruction_shots/RPS_{m.shot}.h5"
+            default_name = DEFAULT_FOLDER_HDF5 + DEFAULT_PREFIX_HDF5 + str(m.shot) + DEFAULT_POSTFIX_HDF5
             hdf5_destination_path, _ = QFileDialog.getSaveFileName(
                 self.view, 'Save HDF5 File', default_name, 'HDF5 Files (*.h5)',
             )

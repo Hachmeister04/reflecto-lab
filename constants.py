@@ -1,5 +1,5 @@
 import numpy as np
-
+import getpass
 # Detector configurations
 BANDS = ('K', 'Ka', 'Q', 'V')
 SIDES = ('HFS', 'LFS')
@@ -51,3 +51,21 @@ HFS_COLOR = 'r'
 HFS_EXCLUSION_COLOR = (250, 160, 160)
 LFS_COLOR = 'b'
 LFS_EXCLUSION_COLOR = (137, 207, 240)
+
+# Folders
+if getpass.getuser().lower()=='vamar':
+    DEFAULT_FOLDER_CONFIG = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/configs_reflecto-lab/"
+    DEFAULT_PREFIX_CONFIG = f"configurations_"
+    DEFAULT_POSTFIX_CONFIG = f".json"
+
+    DEFAULT_FOLDER_HDF5 = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/reconstruction_shots/"
+    DEFAULT_PREFIX_HDF5 = "RPS_"
+    DEFAULT_POSTFIX_HDF5 = ".h5"
+else:
+    DEFAULT_FOLDER_CONFIG = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/"
+    DEFAULT_PREFIX_CONFIG = f"configuraions_"
+    DEFAULT_POSTFIX_CONFIG = f".json"
+
+    DEFAULT_FOLDER_HDF5 = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/"
+    DEFAULT_PREFIX_HDF5 = "RPS_"
+    DEFAULT_POSTFIX_HDF5 = ".h5"
