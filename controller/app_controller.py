@@ -4,7 +4,7 @@ import time
 import logging
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QFileDialog
-from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QObject, QTimer
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
@@ -27,6 +27,10 @@ logger = logging.getLogger(__name__)
 class AppController(QObject):
     """Wires model and view together. Owns all signal-handling logic."""
 
+    # Coalesce rapid sweep changes (e.g. dragging the slider): only the final
+    # position triggers the expensive recompute, this many ms after the last tick.
+    _SWEEP_DEBOUNCE_MS = 50
+
     def __init__(self):
         super().__init__()
 
@@ -47,6 +51,12 @@ class AppController(QObject):
         # Suppression flags
         self._suppress_fft_updates = False
         self._suppress_exclusions = False
+
+        # Debounce timer for the sweep recompute pipeline. Single-shot; each
+        # sweep change restarts it, so a drag only computes the final position.
+        self._sweep_timer = QTimer(self)
+        self._sweep_timer.setSingleShot(True)
+        self._sweep_timer.timeout.connect(self._do_sweep_recompute)
 
         # Wire signals — store lambda refs so they can be used with blockSignal
         self._connect_signals()
@@ -330,9 +340,12 @@ class AppController(QObject):
     # --- Sweep navigation ---
 
     def _on_sweep_changed(self, source):
-        """Sweep/timestamp change."""
-        t0 = time.perf_counter()
+        """Sweep/timestamp change.
 
+        Syncs the three sweep widgets (slider, number, timestamp) immediately so
+        the UI tracks the input, then debounces the expensive recompute so that
+        dragging the slider doesn't queue one full pipeline per integer step.
+        """
         p = self.panels
         m = self.model
         ts = m.time_stamps
@@ -361,7 +374,18 @@ class AppController(QObject):
             p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self._h_sweep_slider)
             p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
 
+        # Coalesce rapid changes: the heavy pipeline runs once the position settles.
+        self._sweep_timer.start(self._SWEEP_DEBOUNCE_MS)
+
+    def _do_sweep_recompute(self):
+        """Run the expensive sweep pipeline for the current detector.sweep.
+
+        Invoked (debounced) by ``_sweep_timer`` after the sweep position settles.
+        """
         t1 = time.perf_counter()
+
+        p = self.panels
+        m = self.model
 
         # Pre-warm linearization cache for all 4 bands in parallel.
         # Each cache miss costs ~80ms; 4 sequential = ~320ms, parallel = ~80ms.
@@ -392,7 +416,7 @@ class AppController(QObject):
                 "all_beatf=%.1fms group_delays=%.1fms profile=%.1fms TOTAL=%.1fms",
                 (t1b - t1) * 1000, (t2 - t1b) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
                 (t5 - t4) * 1000, (t6 - t5) * 1000, (t7 - t6) * 1000,
-                (t7 - t0) * 1000,
+                (t7 - t1) * 1000,
             )
 
     # --- FFT parameters ---
