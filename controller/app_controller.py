@@ -435,6 +435,9 @@ class AppController(QObject):
             p.sweep.child('Timestamp').setLimits((m.time_stamps[lower_limit - 1], m.time_stamps[upper_limit - 1]))
             p.fft.child('Background sweep').setLimits((value // 2, len(m.time_stamps) - value // 2 - 1))
             self._suppress_fft_updates = False
+            
+            #update big step of slider to be the new burst size
+            list(p.sweep.child('Sweep').items)[0].slider.setPageStep(value)
 
         elif source == 'subtract_background':
             sp.subtract_background = p.fft.child('Subtract background').value()
