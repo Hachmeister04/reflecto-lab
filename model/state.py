@@ -18,6 +18,7 @@ class SpectrogramParams:
     subtract_background: bool = False
     subtract_dispersion: Optional[bool] = None
     background_sweep: int = 0
+    background_burst_size: int = DEFAULT_BURST_SIZE
 
     def to_config_dict(self):
         return {
@@ -27,6 +28,7 @@ class SpectrogramParams:
             'subtract background': self.subtract_background,
             'subtract dispersion': self.subtract_dispersion,
             'background sweep': self.background_sweep,
+            'background burst size (odd)': self.background_burst_size
         }
 
     @classmethod
@@ -38,6 +40,7 @@ class SpectrogramParams:
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
             background_sweep=d.get('background sweep', 0),
+            background_burst_size=d.get('background burst size (odd)', DEFAULT_BURST_SIZE)
         )
 
 
@@ -164,6 +167,7 @@ class DetectorSelection:
     side: str = 'HFS'
     sweep: int = 0
     burst_size: int = DEFAULT_BURST_SIZE
+    background_burst_size: int = DEFAULT_BURST_SIZE
 
 
 @dataclass
@@ -174,6 +178,7 @@ class ReconstructionInput:
     filters: dict = field(default_factory=dict)
     exclusion_filters: dict = field(default_factory=dict)
     burst_size: int = DEFAULT_BURST_SIZE
+    background_burst_size: int = DEFAULT_BURST_SIZE
     start_time: float = DEFAULT_START_TIME
     end_time: float = DEFAULT_END_TIME
     time_step: float = DEFAULT_TIMESTEP

@@ -108,6 +108,7 @@ class AppController(QObject):
         self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
         self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
         self._h_fft_bg_sweep = lambda: self._on_fft_changed('background_sweep')
+        self._h_fft_bg_burst = lambda: self._on_fft_changed('background_burst_size')
         self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
         self._h_fft_low = lambda: self._on_fft_changed('low_filter')
         self._h_fft_high = lambda: self._on_fft_changed('high_filter')
@@ -118,6 +119,7 @@ class AppController(QObject):
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
         p.fft.child('Background sweep').sigValueChanged.connect(self._h_fft_bg_sweep)
+        p.fft.child('Background burst size (odd)').sigValueChanged.connect(self._h_fft_bg_burst)
         p.fft.child('Subtract dispersion').sigValueChanged.connect(self._h_fft_sub_disp)
         p.fft.child('Color Map').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
@@ -475,6 +477,10 @@ class AppController(QObject):
             sp.background_sweep = int(p.fft.child('Background sweep').value())
             p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
 
+        elif source == 'background_burst_size':
+            sp.background_burst_size = int(p.fft.child('Background burst size (odd)').value())
+            p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
+
         elif source == 'subtract_dispersion':
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
 
@@ -495,7 +501,7 @@ class AppController(QObject):
             if source in ('low_filter', 'high_filter', 'subtract_background'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
-            elif source == 'burst_size':
+            elif source == 'burst_size' or source == 'background_burst_size':
                 for side in SIDES:
                     for band in BANDS:
                         m.compute_background(band, side)

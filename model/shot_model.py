@@ -419,7 +419,7 @@ class ShotModel:
     def compute_background(self, band, side):
         """Calculate and store background spectrogram."""
         sp = self.spect_params[side][band]
-        burst_size = self.detector.burst_size
+        burst_size = sp.background_burst_size
 
         # Clamp background sweep to valid range so the burst window
         # [sweep - burst_size//2, sweep + burst_size//2] stays within the data.
