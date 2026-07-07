@@ -608,19 +608,22 @@ class ShotModel:
         with open(path, 'r') as f:
             data = json.load(f)
 
+        self.detector.burst_size = data.get('burst_size', 1)
+
         params = data.get('parameters', {})
         for side in SIDES:
             for band in BANDS:
                 if side in params and band in params[side]:
                     self.spect_params[side][band] = SpectrogramParams.from_config_dict(params[side][band])
+                    # if not in config file use burst size
+                    if self.spect_params[side][band].background_burst_size is None:
+                        self.spect_params[side][band].background_burst_size = self.detector.burst_size
 
         filters = data.get('filters', {})
         for side in SIDES:
             for band in BANDS:
                 if side in filters and band in filters[side]:
                     self.filters[side][band] = FilterRange.from_config_list(filters[side][band])
-
-        self.detector.burst_size = data.get('burst_size', 1)
 
         exclusions = data.get('exclusion_filters', {})
         for side in SIDES:

@@ -40,7 +40,7 @@ class SpectrogramParams:
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
             background_sweep=d.get('background sweep', 0),
-            background_burst_size=d.get('background burst size (odd)', DEFAULT_BURST_SIZE)
+            background_burst_size=d.get('background burst size (odd)', None)
         )
 
 
@@ -167,7 +167,6 @@ class DetectorSelection:
     side: str = 'HFS'
     sweep: int = 0
     burst_size: int = DEFAULT_BURST_SIZE
-    background_burst_size: int = DEFAULT_BURST_SIZE
 
 
 @dataclass

@@ -171,6 +171,7 @@ class AppController(QObject):
 
         p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._h_fft_sub_bg)
         p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
+        p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
         p.fft.child('Subtract dispersion').setValue(
             sp.subtract_dispersion if sp.subtract_dispersion is not None else False,
             blockSignal=self._h_fft_sub_disp,
@@ -468,12 +469,17 @@ class AppController(QObject):
             sp.subtract_background = p.fft.child('Subtract background').value()
 
         elif source == 'background_sweep':
-            sp.background_sweep = int(p.fft.child('Background sweep').value())
+            value = int(p.fft.child('Background sweep').value())
+            sp.background_sweep = value
             p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
 
         elif source == 'background_burst_size':
-            sp.background_burst_size = int(p.fft.child('Background burst size (odd)').value())
+            value = int(p.fft.child('Background burst size (odd)').value())
+            if value % 2 == 0:
+                value -= 1
+            sp.background_burst_size = value
             p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
+            p.fft.child('Background sweep').setLimits((value // 2, len(m.time_stamps) - value // 2 - 1))
 
         elif source == 'subtract_dispersion':
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
@@ -495,7 +501,7 @@ class AppController(QObject):
             if source in ('low_filter', 'high_filter', 'subtract_background'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
-            elif source == 'burst_size' or source == 'background_burst_size':
+            elif source in ('burst_size', 'background_burst_size'):
                 for side in SIDES:
                     for band in BANDS:
                         m.compute_background(band, side)
@@ -791,6 +797,7 @@ class AppController(QObject):
         self._sync_params_to_panels()
 
         # Force change signal to handle sweep number and plot everything
+        #TODO: should't this be in _sync_params_to_panels?
         p = self.panels
         p.fft.child('burst size (odd)').setValue(2, blockSignal=self._h_fft_burst)
         p.fft.child('burst size (odd)').setValue(self.model.detector.burst_size)
