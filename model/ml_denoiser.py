@@ -132,7 +132,9 @@ class MLdenoising():
             raise TypeError(f"Expected np.ndarray, got {type(input_spectrogram)}")
 
         size = len(self.arr)
-        noisy_specs = self.normalize_array(self.arr.astype(np.float32))
+        
+        # Extracting normalization tracking matrices (arr_min and diff)
+        noisy_specs, arr_min, diff = self.normalize_array(self.arr.astype(np.float32))
 
         final_output = np.zeros((size, SPEC_H, SPEC_W))
 
@@ -140,12 +142,21 @@ class MLdenoising():
             for i in range(size):
                 noisy_spec = torch.FloatTensor(noisy_specs[i]).unsqueeze(0).unsqueeze(0).to(DEVICE)
                 denoised_data = self.denoiser(noisy_spec)
-                final_output[i] = denoised_data.cpu().numpy()
+                
+                # Added .squeeze() to safely fit the (1, 1, H, W) tensor output into the (H, W) array slice
+                final_output[i] = denoised_data.squeeze().cpu().numpy()
+                
+        # De-normalize back to the original scale before returning
+        # final_output = self.denormalize_array(final_output, arr_min, diff)
+        # if size == 1:
+        #     return final_output[0]  # Return a 2D array if input was 2D
+        
         return final_output
 
     def normalize_array(self, arr):
         """
         Applies min-max normalization to a 3D array (N, H, W) independently for each N.
+        Returns the normalized array along with the min and diff parameters for de-normalization.
         """
         arr_min = arr.min(axis=(1, 2), keepdims=True)
         arr_max = arr.max(axis=(1, 2), keepdims=True)
@@ -153,4 +164,12 @@ class MLdenoising():
         diff = arr_max - arr_min
         diff[diff == 0] = 1.0
 
-        return (arr - arr_min) / diff
+        normalized_arr = (arr - arr_min) / diff
+        return normalized_arr, arr_min, diff
+
+    def denormalize_array(self, normalized_arr, arr_min, diff):
+        """
+        Reverses the min-max normalization using stored min and diff values.
+        Leverages NumPy broadcasting over the (N, H, W) and (N, 1, 1) shapes.
+        """
+        return (normalized_arr * diff) + arr_min
