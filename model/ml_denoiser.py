@@ -88,14 +88,14 @@ def _weights_path(filename):
 
 
 WEIGHTS_BY_BAND_SIDE = {
-    ('K', 'HFS'): 'v2.2_K_HFS_1500.pth',
-    ('K', 'LFS'): 'v2.2_K_LFS_1500_denoiser.pth',
+    ('K', 'HFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_K_HFS_3000_denoiser_d3.pth',
+    ('K', 'LFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_K_LFS_3000_denoiser_d3.pth',
     # ('V', 'HFS'): 'v2.2_V_HFS_1500.pth',
     # ('V', 'LFS'): 'v2.2_V_LFS_1500.pth',
-    ('Q', 'HFS'): 'v2.2_Q_HFS_111003_2_denoiser.pth',
-    ('Q', 'LFS'): 'v2.2_Q_LFS_111003_denoiser.pth',
-    ('Ka', 'HFS'): 'v2.2_Ka_HFS_1500_denoiser.pth',
-    ('Ka', 'LFS'): 'v2.2_Ka_LFS_1500_denoiser.pth',
+    ('Q', 'HFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_Q_HFS_3000_denoiser_d3.pth',
+    ('Q', 'LFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_Q_LFS_3000_denoiser_d3.pth',
+    ('Ka', 'HFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_Ka_HFS_3000_denoiser_d3.pth',
+    ('Ka', 'LFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_Ka_LFS_3000_denoiser_d3.pth',
 }
 
 
