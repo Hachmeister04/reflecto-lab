@@ -268,8 +268,8 @@ class AppController(QObject):
 
         # Set parameter limits
         ts = m.time_stamps
-        p.sweep.child('Sweep').setLimits((1, len(ts)))
-        p.sweep.child('Sweep nº').setLimits((1, len(ts)))
+        p.sweep.child('Sweep').setLimits((0, len(ts) - 1))
+        p.sweep.child('Sweep nº').setLimits((0, len(ts) - 1))
         p.sweep.child('Timestamp').setLimits((ts[0], ts[-1]))
         p.sweep.child('Timestamp').setOpts(step=ts[1])
         bs = m.detector.burst_size
@@ -349,15 +349,15 @@ class AppController(QObject):
 
         if source == 'slider':
             value = p.sweep.child('Sweep').value()
-            m.detector.sweep = value - 1
-            timestamp = ts[value - 1]
+            m.detector.sweep = value
+            timestamp = ts[value]
             p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
             p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
 
         elif source == 'number':
             value = int(p.sweep.child('Sweep nº').value())
-            m.detector.sweep = value - 1
-            timestamp = ts[value - 1]
+            m.detector.sweep = value
+            timestamp = ts[value]
             p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
             p.sweep.child('Sweep').setValue(value, blockSignal=self._h_sweep_slider)
             p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
@@ -368,8 +368,8 @@ class AppController(QObject):
             index = np.where(ts == timestamp)
             m.detector.sweep = index[0][0]
             p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
-            p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self._h_sweep_slider)
-            p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
+            p.sweep.child('Sweep').setValue(index[0][0], blockSignal=self._h_sweep_slider)
+            p.sweep.child('Sweep nº').setValue(index[0][0], blockSignal=self._h_sweep_number)
 
         # Coalesce rapid changes: the heavy pipeline runs once the position settles.
         self._sweep_timer.start(self._SWEEP_DEBOUNCE_MS)
@@ -453,13 +453,13 @@ class AppController(QObject):
             p.fft.child('burst size (odd)').setValue(value, blockSignal=self._h_fft_burst)
             m.detector.burst_size = value
 
-            lower_limit = 1 + value // 2
-            upper_limit = len(m.time_stamps) - value // 2
+            lower_limit = value // 2
+            upper_limit = len(m.time_stamps) - value // 2 - 1
             self._suppress_fft_updates = True
             p.sweep.child('Sweep').setLimits((lower_limit, upper_limit))
             p.sweep.child('Sweep nº').setLimits((lower_limit, upper_limit))
-            p.sweep.child('Timestamp').setLimits((m.time_stamps[lower_limit - 1], m.time_stamps[upper_limit - 1]))
-            p.fft.child('Background sweep').setLimits((value // 2, len(m.time_stamps) - value // 2 - 1))
+            p.sweep.child('Timestamp').setLimits((m.time_stamps[lower_limit], m.time_stamps[upper_limit]))
+            p.fft.child('Background sweep').setLimits((lower_limit, upper_limit))
             self._suppress_fft_updates = False
             
             #update big step of slider to be the new burst size

@@ -41,8 +41,8 @@ class ParameterPanels:
         ])
 
         self.sweep = Parameter.create(name='Sweep', type='group', visible=False, children=[
-            {'name': 'Sweep nº', 'type': 'float', 'value': 1, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
-            {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
+            {'name': 'Sweep nº', 'type': 'float', 'value': 0, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
+            {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (0, 0)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
 
