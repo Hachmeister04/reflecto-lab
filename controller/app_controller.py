@@ -107,6 +107,7 @@ class AppController(QObject):
         self._h_fft_nfft = lambda: self._on_fft_changed('nfft')
         self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
         self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
+        self._h_fft_fix_bg = lambda: self._on_fft_changed('fix_background_parameters')
         self._h_fft_bg_sweep = lambda: self._on_fft_changed('background_sweep')
         self._h_fft_bg_burst = lambda: self._on_fft_changed('background_burst_size')
         self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
@@ -118,6 +119,7 @@ class AppController(QObject):
         p.fft.child('burst size (odd)').sigValueChanged.connect(self._h_fft_burst)
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
+        p.fft.child('Fix background sweep and burst size').sigValueChanged.connect(self._h_fft_fix_bg)
         p.fft.child('Background sweep').sigValueChanged.connect(self._h_fft_bg_sweep)
         p.fft.child('Background burst size (odd)').sigValueChanged.connect(self._h_fft_bg_burst)
         p.fft.child('Subtract dispersion').sigValueChanged.connect(self._h_fft_sub_disp)
@@ -468,16 +470,42 @@ class AppController(QObject):
         elif source == 'subtract_background':
             sp.subtract_background = p.fft.child('Subtract background').value()
 
+        elif source == 'fix_background_parameters':
+            value = p.fft.child('Fix background sweep and burst size').value()
+            _bg_sweep = int(p.fft.child('Background sweep').value())
+            _bg_burst_size = int(p.fft.child('Background burst size (odd)').value())
+            if value:
+                sweep = sp.background_sweep
+                for side in SIDES:
+                    for band in BANDS:
+                        m.spect_params[side][band].background_sweep = _bg_sweep
+                        m.spect_params[side][band].background_burst_size = _bg_burst_size
+            p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
+            p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
+            p.fft.child('Background sweep').setLimits((sp.background_burst_size // 2, len(m.time_stamps) - sp.background_burst_size // 2 - 1))
+
         elif source == 'background_sweep':
+            fixed_bg_parameters = p.fft.child('Fix background sweep and burst size').value()
             value = int(p.fft.child('Background sweep').value())
-            sp.background_sweep = value
+            if fixed_bg_parameters:
+                for side in SIDES:
+                    for band in BANDS:
+                        m.spect_params[side][band].background_sweep = value
+            else:
+                sp.background_sweep = value
             p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
 
         elif source == 'background_burst_size':
+            fixed_bg_parameters = p.fft.child('Fix background sweep and burst size').value()
             value = int(p.fft.child('Background burst size (odd)').value())
             if value % 2 == 0:
                 value -= 1
-            sp.background_burst_size = value
+            if fixed_bg_parameters:
+                for side in SIDES:
+                    for band in BANDS:
+                        m.spect_params[side][band].background_burst_size = value
+            else:
+                sp.background_burst_size = value
             p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
             p.fft.child('Background sweep').setLimits((value // 2, len(m.time_stamps) - value // 2 - 1))
 
@@ -501,7 +529,7 @@ class AppController(QObject):
             if source in ('low_filter', 'high_filter', 'subtract_background'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
-            elif source in ('burst_size', 'background_burst_size'):
+            elif source in ('burst_size', 'background_burst_size', 'background_sweep', 'fix_background_parameters'):
                 for side in SIDES:
                     for band in BANDS:
                         m.compute_background(band, side)

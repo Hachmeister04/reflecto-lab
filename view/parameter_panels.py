@@ -53,6 +53,7 @@ class ParameterPanels:
             {'name': 'burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Scale', 'type': 'checklist', 'limits': ['Normalized', 'Linear', 'Logarithmic'], 'exclusive': True, 'delay': 0},
             {'name': 'Subtract background', 'type': 'bool', 'value': False, 'delay': 0},
+            {'name': 'Fix background sweep and burst size', 'type': 'bool', 'value': True, 'delay': 0},
             {'name': 'Background sweep', 'type': 'float', 'value': 0, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
             {'name': 'Background burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Subtract dispersion', 'type': 'bool', 'value': False, 'delay': 0},
