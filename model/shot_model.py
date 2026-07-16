@@ -20,7 +20,7 @@ from constants import (
     PROFILE_INVERSION_RESOLUTION,
 )
 from model.state import (
-    SpectrogramParams, FilterRange, ExclusionRange,
+    SpectrogramParams, FilterRange, ExclusionRange, ExclusionRegion,
     InitValues, InitFileData, BeatFrequencyData,
     CurrentSweepData, CurrentFFTData, CurrentDisplayData,
     AggregatedDelayData, DetectorSelection,
@@ -60,6 +60,9 @@ class ShotModel:
         # Per-side state
         self.exclusion_filters = {side: [] for side in SIDES}
         self.init_values = {side: InitValues() for side in SIDES}
+
+        # Per-detector (band+side) 2D spectrogram exclusion regions
+        self.exclusion_regions = {side: {band: [] for band in BANDS} for side in SIDES}
 
         # Current detector selection
         self.detector = DetectorSelection()
@@ -107,9 +110,9 @@ class ShotModel:
     def post_load_init(self):
         """Run after successful shot load: backgrounds, limiters, timestamps."""
         self.sampling_frequency = rpspy.get_sampling_frequency(self.shot, self.file_path)
+        self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
         self.compute_all_backgrounds()
         self._init_default_limiters()
-        self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
 
     def _init_default_limiters(self):
         """Set default limiter positions from rpspy."""
@@ -311,12 +314,28 @@ class ShotModel:
 
     # --- Beat frequency ---
 
-    def compute_beatf(self, band, side, Sxx, y_dis, f_beat, fs):
+    def compute_beatf(self, band, side, Sxx, y_dis, f_beat, fs, f_probe):
         """Compute beat frequency from spectrogram data."""
         filt = self.filters[side][band]
 
         Sxx[np.broadcast_to(f_beat[:, None], Sxx.shape) <= y_dis + filt.low] = Sxx.min()
         Sxx[np.broadcast_to(f_beat[:, None], Sxx.shape) >= y_dis + filt.high] = Sxx.min()
+
+        sxx_min = Sxx.min()
+
+        # ExclusionRange is intentionally NOT masked here: blanking a whole f_beat
+        # column makes the quadratic peak fit return NaN. Those points are dropped
+        # from the final curve in compute_aggregated_delays instead.
+
+        # ExclusionRegion (per band/side, 2D box, gated by the current sweep timestamp)
+        ts = self.time_stamps[self.detector.sweep]
+        for reg in self.exclusion_regions[side][band]:
+            if not reg.enabled or not (reg.t_min <= ts <= reg.t_max):
+                continue
+            cols = (f_probe >= reg.f_prob_min) & (f_probe <= reg.f_prob_max)
+            rows = (f_beat >= reg.f_beat_min) & (f_beat <= reg.f_beat_max)
+            if cols.any() and rows.any():
+                Sxx[np.ix_(rows, cols)] = sxx_min
 
         y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)
         y_max *= abs(f_beat[1] - f_beat[0])
@@ -355,7 +374,7 @@ class ShotModel:
             Sxx = self.background_subtract(Sxx, band, side)
 
         y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
-        y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs)
+        y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs, f_probe)
 
         df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
         y_beat_time = (y_beatf - y_dis) / df_dt
@@ -403,8 +422,15 @@ class ShotModel:
     def compute_background(self, band, side):
         """Calculate and store background spectrogram."""
         sp = self.spect_params[side][band]
-        burst_size = self.detector.burst_size
-        sweep = burst_size // 2
+        burst_size = sp.background_burst_size
+
+        # Clamp background sweep to valid range so the burst window
+        # [sweep - burst_size//2, sweep + burst_size//2] stays within the data.
+        half = burst_size // 2
+        n_sweeps = len(self.time_stamps)
+        lower = half
+        upper = max(lower, n_sweeps - half - 1)
+        sweep = int(np.clip(sp.background_sweep, lower, upper))
 
         _, _, _, _, _, Sxx = self.compute_spectrogram(
             band, side, sp.nperseg, sp.noverlap, sp.nfft,
@@ -454,8 +480,12 @@ class ShotModel:
             all_beat_time = all_beat_time[~nan_mask]
             all_f_probe = all_f_probe[~nan_mask]
 
-            # Apply exclusion filters
+            # Apply exclusion filters (ExclusionRange): drop these f_probe points
+            # from the final curve. ExclusionRegions are handled upstream by masking
+            # the spectrogram in compute_beatf, so they are not dropped here.
             for excl in self.exclusion_filters[side]:
+                if not excl.enabled:
+                    continue
                 mask = (all_f_probe >= excl.low) & (all_f_probe <= excl.high) & (all_f_probe != 0)
                 all_f_probe = all_f_probe[~mask]
                 all_beat_time = all_beat_time[~mask]
@@ -524,7 +554,7 @@ class ShotModel:
         self.current_fft.Sxx = Sxx
 
         y_dis = self.compute_dispersion(d.band, d.side, fft.f_probe, fft.t, sp.subtract_dispersion)
-        y_beatf = self.compute_beatf(d.band, d.side, np.array(Sxx), y_dis, fft.f_beat, fft.fs)
+        y_beatf = self.compute_beatf(d.band, d.side, np.array(Sxx), y_dis, fft.f_beat, fft.fs, fft.f_probe)
 
         self.current_display = CurrentDisplayData(
             y_beatf=y_beatf,
@@ -550,13 +580,22 @@ class ShotModel:
 
         exclusions_dict = {}
         for side in SIDES:
-            exclusions_dict[side] = [excl.to_config_list() for excl in self.exclusion_filters[side]]
+            exclusions_dict[side] = [excl.to_config_list() for excl in self.exclusion_filters[side] if excl.enabled]
+
+        regions_dict = {}
+        for side in SIDES:
+            regions_dict[side] = {}
+            for band in BANDS:
+                regions_dict[side][band] = [
+                    reg.to_config_list() for reg in self.exclusion_regions[side][band]
+                ]
 
         data = {
             'parameters': params_dict,
             'filters': filters_dict,
             'burst_size': self.detector.burst_size,
             'exclusion_filters': exclusions_dict,
+            'exclusion_regions': regions_dict,
         }
 
         with open(path, 'w') as f:
@@ -569,11 +608,16 @@ class ShotModel:
         with open(path, 'r') as f:
             data = json.load(f)
 
+        self.detector.burst_size = data.get('burst_size', 1)
+
         params = data.get('parameters', {})
         for side in SIDES:
             for band in BANDS:
                 if side in params and band in params[side]:
                     self.spect_params[side][band] = SpectrogramParams.from_config_dict(params[side][band])
+                    # if not in config file use burst size
+                    if self.spect_params[side][band].background_burst_size is None:
+                        self.spect_params[side][band].background_burst_size = self.detector.burst_size
 
         filters = data.get('filters', {})
         for side in SIDES:
@@ -581,11 +625,17 @@ class ShotModel:
                 if side in filters and band in filters[side]:
                     self.filters[side][band] = FilterRange.from_config_list(filters[side][band])
 
-        self.detector.burst_size = data.get('burst_size', 1)
-
         exclusions = data.get('exclusion_filters', {})
         for side in SIDES:
             if side in exclusions:
                 self.exclusion_filters[side] = [
                     ExclusionRange.from_config_list(e) for e in exclusions[side]
                 ]
+
+        regions = data.get('exclusion_regions', {})
+        for side in SIDES:
+            for band in BANDS:
+                if side in regions and band in regions[side]:
+                    self.exclusion_regions[side][band] = [
+                        ExclusionRegion.from_config_list(r) for r in regions[side][band]
+                    ]

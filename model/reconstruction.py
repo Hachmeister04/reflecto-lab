@@ -48,6 +48,18 @@ class ReconstructionWorker(QObject):
                     if sp.subtract_dispersion:
                         subtract_dispersion_on_bands.append(f"{band}-{side}")
 
+            background_sweeps = {}
+            for side in ['HFS', 'LFS']:
+                background_sweeps[side] = {}
+                for band in ['K', 'Ka', 'Q', 'V']:
+                    background_sweeps[side][band] = params.spect_params[side][band].background_sweep
+            
+            background_burst_size = {}
+            for side in ['HFS', 'LFS']:
+                background_burst_size[side] = {}
+                for band in ['K', 'Ka', 'Q', 'V']:
+                    background_burst_size[side][band] = params.spect_params[side][band].background_burst_size
+
             # Convert filters from FilterRange objects to the list format rpspy expects
             filters_dict = {}
             for side in ['HFS', 'LFS']:
@@ -59,7 +71,7 @@ class ReconstructionWorker(QObject):
             # Convert exclusion filters from ExclusionRange objects to list format
             exclusion_dict = {}
             for side in ['HFS', 'LFS']:
-                exclusion_dict[side] = [[e.low, e.high] for e in params.exclusion_filters[side]]
+                exclusion_dict[side] = [[e.low, e.high] for e in params.exclusion_filters[side] if e.enabled]
 
             rpspy.full_profile_reconstruction(
                 shot=params.shot,
@@ -85,6 +97,8 @@ class ReconstructionWorker(QObject):
                 initialization_lfs=params.get_init_lfs,
                 initialization_hfs=params.get_init_hfs,
                 density_cutoff=params.density_cutoff if params.apply_density_cutoff else None,
+                background_sweeps=background_sweeps,
+                background_burst_size=background_burst_size,
             )
 
             self.finished_signal.emit()

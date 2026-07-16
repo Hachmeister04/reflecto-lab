@@ -4,14 +4,16 @@ import time
 import logging
 import numpy as np
 from PyQt5.QtWidgets import QApplication, QFileDialog
-from PyQt5.QtCore import QObject
+from PyQt5.QtCore import QObject, QTimer
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
     DECIMALS_EXCLUSIONS, EXCLUSION_REGIONS_MAX_N,
+    DEFAULT_PREFIX_HDF5, DEFAULT_POSTFIX_HDF5, DEFAULT_FOLDER_HDF5,
+    DEFAULT_PREFIX_CONFIG, DEFAULT_POSTFIX_CONFIG, DEFAULT_FOLDER_CONFIG
 )
 from model.shot_model import ShotModel
-from model.state import ReconstructionInput, ExclusionRange
+from model.state import ReconstructionInput, ExclusionRange, ExclusionRegion
 from view.main_window import MainWindowView
 from view.reconstruction_window import ReconstructionWindow
 from view.parameter_panels import ParameterPanels
@@ -24,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 class AppController(QObject):
     """Wires model and view together. Owns all signal-handling logic."""
+
+    # Coalesce rapid sweep changes (e.g. dragging the slider): only the final
+    # position triggers the expensive recompute, this many ms after the last tick.
+    _SWEEP_DEBOUNCE_MS = 50
 
     def __init__(self):
         super().__init__()
@@ -45,6 +51,12 @@ class AppController(QObject):
         # Suppression flags
         self._suppress_fft_updates = False
         self._suppress_exclusions = False
+
+        # Debounce timer for the sweep recompute pipeline. Single-shot; each
+        # sweep change restarts it, so a drag only computes the final position.
+        self._sweep_timer = QTimer(self)
+        self._sweep_timer.setSingleShot(True)
+        self._sweep_timer.timeout.connect(self._do_sweep_recompute)
 
         # Wire signals — store lambda refs so they can be used with blockSignal
         self._connect_signals()
@@ -95,6 +107,8 @@ class AppController(QObject):
         self._h_fft_nfft = lambda: self._on_fft_changed('nfft')
         self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
         self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
+        self._h_fft_bg_sweep = lambda: self._on_fft_changed('background_sweep')
+        self._h_fft_bg_burst = lambda: self._on_fft_changed('background_burst_size')
         self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
         self._h_fft_low = lambda: self._on_fft_changed('low_filter')
         self._h_fft_high = lambda: self._on_fft_changed('high_filter')
@@ -104,11 +118,14 @@ class AppController(QObject):
         p.fft.child('burst size (odd)').sigValueChanged.connect(self._h_fft_burst)
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
+        p.fft.child('Background sweep').sigValueChanged.connect(self._h_fft_bg_sweep)
+        p.fft.child('Background burst size (odd)').sigValueChanged.connect(self._h_fft_bg_burst)
         p.fft.child('Subtract dispersion').sigValueChanged.connect(self._h_fft_sub_disp)
         p.fft.child('Color Map').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
         p.fft.child('Filters').child('High Filter').sigValueChanged.connect(self._h_fft_high)
         p.fft.child('Exclude frequencies').sigAddNew.connect(self._on_add_exclusion)
+        p.fft.child('Exclude region').sigAddNew.connect(self._on_add_exclusion_region)
 
         # Profiles
         p.profiles.child('Coordinates').sigValueChanged.connect(self._on_profile_coord_changed)
@@ -153,6 +170,8 @@ class AppController(QObject):
         p.fft.child('nfft').setValue(sp.nfft, blockSignal=self._h_fft_nfft)
 
         p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._h_fft_sub_bg)
+        p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
+        p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
         p.fft.child('Subtract dispersion').setValue(
             sp.subtract_dispersion if sp.subtract_dispersion is not None else False,
             blockSignal=self._h_fft_sub_disp,
@@ -164,8 +183,25 @@ class AppController(QObject):
         for excl in m.exclusion_filters[d.side]:
             self._on_add_exclusion()
             children = p.fft.child('Exclude frequencies').children()
+            children[-1].child('Enabled').setValue(excl.enabled, blockSignal=self._on_exclusion_changed)
             children[-1].child('from').setValue(excl.low, blockSignal=self._on_exclusion_changed)
             children[-1].child('to').setValue(excl.high, blockSignal=self._on_exclusion_changed)
+        self._suppress_exclusions = False
+
+        # Update 2D exclusion region UI (per band+side)
+        p.fft.child('Exclude region').clearChildren()
+        self._suppress_exclusions = True
+        for reg in m.exclusion_regions[d.side][d.band]:
+            self._on_add_exclusion_region()
+            children = p.fft.child('Exclude region').children()
+            last = children[-1]
+            last.child('Enabled').setValue(reg.enabled, blockSignal=self._on_exclusion_region_changed)
+            last.child('time_min').setValue(reg.t_min, blockSignal=self._on_exclusion_region_changed)
+            last.child('time_max').setValue(reg.t_max, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_prob_min').setValue(reg.f_prob_min, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_prob_max').setValue(reg.f_prob_max, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_beat_min').setValue(reg.f_beat_min, blockSignal=self._on_exclusion_region_changed)
+            last.child('f_beat_max').setValue(reg.f_beat_max, blockSignal=self._on_exclusion_region_changed)
         self._suppress_exclusions = False
 
         # Update initialization panels
@@ -232,10 +268,12 @@ class AppController(QObject):
 
         # Set parameter limits
         ts = m.time_stamps
-        p.sweep.child('Sweep').setLimits((1, len(ts)))
-        p.sweep.child('Sweep nº').setLimits((1, len(ts)))
+        p.sweep.child('Sweep').setLimits((0, len(ts) - 1))
+        p.sweep.child('Sweep nº').setLimits((0, len(ts) - 1))
         p.sweep.child('Timestamp').setLimits((ts[0], ts[-1]))
         p.sweep.child('Timestamp').setOpts(step=ts[1])
+        bs = m.detector.burst_size
+        p.fft.child('Background sweep').setLimits((bs // 2, len(ts) - bs // 2 - 1))
         p.fft.child('nperseg').setLimits((MIN_NPERSEG, len(m.current_sweep.data) // 2))
         p.fft.child('noverlap').setLimits((0, p.fft.child('nperseg').value() - 1))
         p.fft.child('nfft').setLimits((p.fft.child('nperseg').value(), MAX_NFFT))
@@ -244,6 +282,9 @@ class AppController(QObject):
         p.fft.child('Filters').child('High Filter').setLimits((abs(fft.f_beat[0] - fft.f_beat[1]), np.inf))
         p.reconstruct.child('Start Time').setLimits((0, len(ts) * (ts[1] - ts[0])))
         p.reconstruct.child('End Time').setLimits((0, len(ts) * (ts[1] - ts[0])))
+
+        default_cfg_name = f"{DEFAULT_PREFIX_CONFIG}{self.model.shot}{DEFAULT_POSTFIX_CONFIG}"
+        p.config.child('Save').setOpts(selectFile=default_cfg_name)
 
     # --- Initialization ---
 
@@ -296,24 +337,27 @@ class AppController(QObject):
     # --- Sweep navigation ---
 
     def _on_sweep_changed(self, source):
-        """Sweep/timestamp change."""
-        t0 = time.perf_counter()
+        """Sweep/timestamp change.
 
+        Syncs the three sweep widgets (slider, number, timestamp) immediately so
+        the UI tracks the input, then debounces the expensive recompute so that
+        dragging the slider doesn't queue one full pipeline per integer step.
+        """
         p = self.panels
         m = self.model
         ts = m.time_stamps
 
         if source == 'slider':
             value = p.sweep.child('Sweep').value()
-            m.detector.sweep = value - 1
-            timestamp = ts[value - 1]
+            m.detector.sweep = value
+            timestamp = ts[value]
             p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
             p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
 
         elif source == 'number':
             value = int(p.sweep.child('Sweep nº').value())
-            m.detector.sweep = value - 1
-            timestamp = ts[value - 1]
+            m.detector.sweep = value
+            timestamp = ts[value]
             p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
             p.sweep.child('Sweep').setValue(value, blockSignal=self._h_sweep_slider)
             p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
@@ -324,10 +368,21 @@ class AppController(QObject):
             index = np.where(ts == timestamp)
             m.detector.sweep = index[0][0]
             p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
-            p.sweep.child('Sweep').setValue(index[0][0] + 1, blockSignal=self._h_sweep_slider)
-            p.sweep.child('Sweep nº').setValue(index[0][0] + 1, blockSignal=self._h_sweep_number)
+            p.sweep.child('Sweep').setValue(index[0][0], blockSignal=self._h_sweep_slider)
+            p.sweep.child('Sweep nº').setValue(index[0][0], blockSignal=self._h_sweep_number)
 
+        # Coalesce rapid changes: the heavy pipeline runs once the position settles.
+        self._sweep_timer.start(self._SWEEP_DEBOUNCE_MS)
+
+    def _do_sweep_recompute(self):
+        """Run the expensive sweep pipeline for the current detector.sweep.
+
+        Invoked (debounced) by ``_sweep_timer`` after the sweep position settles.
+        """
         t1 = time.perf_counter()
+
+        p = self.panels
+        m = self.model
 
         # Pre-warm linearization cache for all 4 bands in parallel.
         # Each cache miss costs ~80ms; 4 sequential = ~320ms, parallel = ~80ms.
@@ -358,7 +413,7 @@ class AppController(QObject):
                 "all_beatf=%.1fms group_delays=%.1fms profile=%.1fms TOTAL=%.1fms",
                 (t1b - t1) * 1000, (t2 - t1b) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
                 (t5 - t4) * 1000, (t6 - t5) * 1000, (t7 - t6) * 1000,
-                (t7 - t0) * 1000,
+                (t7 - t1) * 1000,
             )
 
     # --- FFT parameters ---
@@ -398,16 +453,33 @@ class AppController(QObject):
             p.fft.child('burst size (odd)').setValue(value, blockSignal=self._h_fft_burst)
             m.detector.burst_size = value
 
-            lower_limit = 1 + value // 2
-            upper_limit = len(m.time_stamps) - value // 2
+            lower_limit = value // 2
+            upper_limit = len(m.time_stamps) - value // 2 - 1
             self._suppress_fft_updates = True
             p.sweep.child('Sweep').setLimits((lower_limit, upper_limit))
             p.sweep.child('Sweep nº').setLimits((lower_limit, upper_limit))
-            p.sweep.child('Timestamp').setLimits((m.time_stamps[lower_limit - 1], m.time_stamps[upper_limit - 1]))
+            p.sweep.child('Timestamp').setLimits((m.time_stamps[lower_limit], m.time_stamps[upper_limit]))
+            p.fft.child('Background sweep').setLimits((lower_limit, upper_limit))
             self._suppress_fft_updates = False
+            
+            #update big step of slider to be the new burst size
+            list(p.sweep.child('Sweep').items)[0].slider.setPageStep(value)
 
         elif source == 'subtract_background':
             sp.subtract_background = p.fft.child('Subtract background').value()
+
+        elif source == 'background_sweep':
+            value = int(p.fft.child('Background sweep').value())
+            sp.background_sweep = value
+            p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
+
+        elif source == 'background_burst_size':
+            value = int(p.fft.child('Background burst size (odd)').value())
+            if value % 2 == 0:
+                value -= 1
+            sp.background_burst_size = value
+            p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
+            p.fft.child('Background sweep').setLimits((value // 2, len(m.time_stamps) - value // 2 - 1))
 
         elif source == 'subtract_dispersion':
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
@@ -429,7 +501,7 @@ class AppController(QObject):
             if source in ('low_filter', 'high_filter', 'subtract_background'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
-            elif source == 'burst_size':
+            elif source in ('burst_size', 'background_burst_size'):
                 for side in SIDES:
                     for band in BANDS:
                         m.compute_background(band, side)
@@ -457,6 +529,7 @@ class AppController(QObject):
         if pos < EXCLUSION_REGIONS_MAX_N:
             p.fft.child('Exclude frequencies').addChild({
                 'name': f'{pos + 1}', 'type': 'group', 'children': [
+                    {'name': 'Enabled', 'type': 'bool', 'value': True},
                     {'name': 'from', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
                     {'name': 'to', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
                     {'name': 'Remove', 'type': 'action'},
@@ -464,12 +537,13 @@ class AppController(QObject):
             })
 
             child = p.fft.child('Exclude frequencies').child(f'{pos + 1}')
+            child.child('Enabled').sigValueChanged.connect(self._on_exclusion_changed)
             child.child('from').sigValueChanged.connect(self._on_exclusion_changed)
             child.child('to').sigValueChanged.connect(self._on_exclusion_changed)
             child.child('Remove').sigActivated.connect(self._on_remove_exclusion)
 
             if not self._suppress_exclusions:
-                m.exclusion_filters[d.side].append(ExclusionRange(0.0, 0.0))
+                m.exclusion_filters[d.side].append(ExclusionRange(0.0, 0.0, True))
 
     def _on_remove_exclusion(self):
         """Remove an exclusion frequency range."""
@@ -509,9 +583,114 @@ class AppController(QObject):
         d = self.model.detector
         self.model.exclusion_filters[d.side][exclusion_num - 1].low = sender.parent().child('from').value()
         self.model.exclusion_filters[d.side][exclusion_num - 1].high = sender.parent().child('to').value()
+        self.model.exclusion_filters[d.side][exclusion_num - 1].enabled = sender.parent().child('Enabled').value()
 
         self._draw_spectrogram()
         self._draw_group_delays()
+        self._draw_profile()
+
+    def _on_add_exclusion_region(self):
+        """Add a new 2D spectrogram exclusion region for the current detector."""
+        p = self.panels
+        m = self.model
+        d = m.detector
+
+        pos = len(p.fft.child('Exclude region').children())
+        if pos < 10:
+            p.fft.child('Exclude region').addChild({
+                'name': f'{pos + 1}', 'type': 'group', 'children': [
+                    {'name': 'Enabled', 'type': 'bool', 'value': True},
+                    {'name': 'time_min', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'time_max', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_prob_min', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_prob_max', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_beat_min', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'f_beat_max', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'Remove', 'type': 'action'},
+                ]
+            })
+
+            child = p.fft.child('Exclude region').child(f'{pos + 1}')
+            child.child('Enabled').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('time_min').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('time_max').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_prob_min').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_prob_max').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_beat_min').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('f_beat_max').sigValueChanged.connect(self._on_exclusion_region_changed)
+            child.child('Remove').sigActivated.connect(self._on_remove_exclusion_region)
+
+            if not self._suppress_exclusions:
+                # Default the time gate to the full shot span so a new region is
+                # active for the currently displayed sweep right away.
+                region = ExclusionRegion()
+                if m.time_stamps is not None and len(m.time_stamps):
+                    region.t_min = float(m.time_stamps[0])
+                    region.t_max = float(m.time_stamps[-1])
+                    child.child('time_min').setValue(region.t_min, blockSignal=self._on_exclusion_region_changed)
+                    child.child('time_max').setValue(region.t_max, blockSignal=self._on_exclusion_region_changed)
+                m.exclusion_regions[d.side][d.band].append(region)
+
+    def _on_remove_exclusion_region(self):
+        """Remove a 2D spectrogram exclusion region."""
+        sender = self.sender()
+
+        parent = sender.parent()
+        num_of_parent = int(parent.name())
+        p = self.panels
+        m = self.model
+        d = m.detector
+
+        p.fft.child('Exclude region').removeChild(parent)
+
+        # Renumber remaining regions
+        for i in range(num_of_parent, len(p.fft.child('Exclude region').children()) + 1):
+            p.fft.child('Exclude region').child(f'{i + 1}').setName(f'{i}')
+
+        # Remove from model
+        m.exclusion_regions[d.side][d.band].pop(num_of_parent - 1)
+
+        self._recompute_exclusion_regions()
+
+    # min -> max partner for each region bound pair
+    _REGION_PAIRS = {
+        'time_min': 'time_max', 'time_max': 'time_min',
+        'f_prob_min': 'f_prob_max', 'f_prob_max': 'f_prob_min',
+        'f_beat_min': 'f_beat_max', 'f_beat_max': 'f_beat_min',
+    }
+
+    def _on_exclusion_region_changed(self):
+        """A 2D spectrogram exclusion region value changed."""
+        sender = self.sender()
+
+        # Keep each min <= max: editing a min above its max bumps the max up,
+        # editing a max below its min bumps the min down (mirrors exclusion ranges).
+        if sender.name() in self._REGION_PAIRS:
+            partner = sender.parent().child(self._REGION_PAIRS[sender.name()])
+            if sender.name().endswith('_min') and sender.value() > partner.value():
+                partner.setValue(sender.value(), blockSignal=self._on_exclusion_region_changed)
+            elif sender.name().endswith('_max') and sender.value() < partner.value():
+                partner.setValue(sender.value(), blockSignal=self._on_exclusion_region_changed)
+
+        exclusion_num = int(sender.parent().name())
+        d = self.model.detector
+        region = self.model.exclusion_regions[d.side][d.band][exclusion_num - 1]
+        region.enabled = sender.parent().child('Enabled').value()
+        region.t_min = sender.parent().child('time_min').value()
+        region.t_max = sender.parent().child('time_max').value()
+        region.f_prob_min = sender.parent().child('f_prob_min').value()
+        region.f_prob_max = sender.parent().child('f_prob_max').value()
+        region.f_beat_min = sender.parent().child('f_beat_min').value()
+        region.f_beat_max = sender.parent().child('f_beat_max').value()
+
+        self._recompute_exclusion_regions()
+
+    def _recompute_exclusion_regions(self):
+        """Re-run peak-finding after a region change. Regions mask the spectrogram
+        before the max beat frequency is found, so a plain redraw is not enough."""
+        self._draw_spectrogram()         # compute_current_display + draw (current detector)
+        self.model.compute_all_beatf()   # refresh beat_frequencies for all detectors
+        self._draw_group_delays()        # compute_aggregated_delays + draw
         self._draw_profile()
 
     # --- Visual-only changes ---
@@ -559,7 +738,7 @@ class AppController(QObject):
 
         # If HDF5 is enabled, let the user choose the output directory and filename
         if write_hdf5:
-            default_name = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/RPS_{m.shot}.h5"
+            default_name = DEFAULT_FOLDER_HDF5 + DEFAULT_PREFIX_HDF5 + str(m.shot) + DEFAULT_POSTFIX_HDF5
             hdf5_destination_path, _ = QFileDialog.getSaveFileName(
                 self.view, 'Save HDF5 File', default_name, 'HDF5 Files (*.h5)',
             )
@@ -620,6 +799,7 @@ class AppController(QObject):
         self._sync_params_to_panels()
 
         # Force change signal to handle sweep number and plot everything
+        #TODO: should't this be in _sync_params_to_panels?
         p = self.panels
         p.fft.child('burst size (odd)').setValue(2, blockSignal=self._h_fft_burst)
         p.fft.child('burst size (odd)').setValue(self.model.detector.burst_size)
@@ -685,6 +865,13 @@ class AppController(QObject):
         self.renderer.draw_beatf_on_spectrogram(
             self.view.plot_spect, fft.f_probe, disp.y_beatf,
             m.exclusion_filters[d.side], d.side,
+        )
+
+        # Shade the 2D exclusion regions active for the current sweep.
+        timestamp = m.time_stamps[d.sweep] if m.time_stamps is not None else 0
+        self.renderer.draw_exclusion_regions(
+            self.view.plot_spect, m.exclusion_regions[d.side][d.band],
+            timestamp, fft.f_probe, fft.f_beat,
         )
 
     def _draw_group_delays(self):
