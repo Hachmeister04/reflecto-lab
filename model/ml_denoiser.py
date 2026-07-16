@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from rpspy.ml_denoiser import MLdenoising
+from rpspy.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
 
 # print(f'pyTorch version: {torch.__version__}')
 # NOISE_CHANNELS = 1
