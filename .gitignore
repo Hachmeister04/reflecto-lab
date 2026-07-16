@@ -1,3 +1,8 @@
+core*
+.vscode
+reconstruction_shots/
+
+
 # Claude Code
 .claude
 

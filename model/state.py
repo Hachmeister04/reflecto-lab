@@ -17,6 +17,8 @@ class SpectrogramParams:
     nfft: int = DEFAULT_NFFT
     subtract_background: bool = False
     subtract_dispersion: Optional[bool] = None
+    background_sweep: int = 0
+    background_burst_size: int = DEFAULT_BURST_SIZE
 
     def to_config_dict(self):
         return {
@@ -25,6 +27,8 @@ class SpectrogramParams:
             'nfft': self.nfft,
             'subtract background': self.subtract_background,
             'subtract dispersion': self.subtract_dispersion,
+            'background sweep': self.background_sweep,
+            'background burst size (odd)': self.background_burst_size
         }
 
     @classmethod
@@ -35,6 +39,8 @@ class SpectrogramParams:
             nfft=d['nfft'],
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
+            background_sweep=d.get('background sweep', 0),
+            background_burst_size=d.get('background burst size (odd)', None)
         )
 
 
@@ -55,13 +61,50 @@ class FilterRange:
 class ExclusionRange:
     low: float = 0.0
     high: float = 0.0
+    enabled: bool = True
 
     def to_config_list(self):
         return [self.low, self.high]
 
     @classmethod
     def from_config_list(cls, lst):
-        return cls(low=lst[0], high=lst[1])
+        # Loaded exclusions are always enabled.
+        return cls(low=lst[0], high=lst[1], enabled=True)
+
+
+@dataclass
+class ExclusionRegion:
+    """A 2D region of the beat-frequency spectrogram to ignore during peak-finding.
+
+    The (t_min, t_max) range is shot/discharge time in seconds and gates which
+    sweeps the region applies to. (f_prob_min, f_prob_max) is the probing-frequency
+    extent (spectrogram x-axis) and (f_beat_min, f_beat_max) the beat-frequency
+    extent (spectrogram y-axis).
+    """
+    t_min: float = 0.0
+    t_max: float = 0.0
+    f_prob_min: float = 0.0
+    f_prob_max: float = 0.0
+    f_beat_min: float = 0.0
+    f_beat_max: float = 0.0
+    enabled: bool = True
+
+    def to_config_list(self):
+        return [
+            self.t_min, self.t_max,
+            self.f_prob_min, self.f_prob_max,
+            self.f_beat_min, self.f_beat_max,
+            self.enabled,
+        ]
+
+    @classmethod
+    def from_config_list(cls, lst):
+        return cls(
+            t_min=lst[0], t_max=lst[1],
+            f_prob_min=lst[2], f_prob_max=lst[3],
+            f_beat_min=lst[4], f_beat_max=lst[5],
+            enabled=lst[6] if len(lst) > 6 else True,
+        )
 
 
 @dataclass
@@ -134,6 +177,7 @@ class ReconstructionInput:
     filters: dict = field(default_factory=dict)
     exclusion_filters: dict = field(default_factory=dict)
     burst_size: int = DEFAULT_BURST_SIZE
+    background_burst_size: int = DEFAULT_BURST_SIZE
     start_time: float = DEFAULT_START_TIME
     end_time: float = DEFAULT_END_TIME
     time_step: float = DEFAULT_TIMESTEP

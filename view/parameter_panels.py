@@ -1,13 +1,13 @@
 from pyqtgraph.parametertree import Parameter
 import getpass
 from constants import (
-    DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE,
+    DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE, DEFAULT_POSTFIX_CONFIG,
     MAX_BURST_SIZE,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, DEFAULT_DENSITY_CUTOFF,
     DECIMALS_SWEEP_NUM, DECIMALS_TIMESTAMP,
     DECIMALS_NPERSEG, DECIMALS_NOVERLAP, DECIMALS_NFFT,
-    DECIMALS_EXCLUSIONS, DECIMALS_INIT,
+    DECIMALS_EXCLUSIONS, DECIMALS_INIT, DEFAULT_FOLDER_CONFIG
 )
 
 
@@ -28,10 +28,9 @@ class ParameterPanels:
         ])
         self.init.child('File').setValue('')
 
-        default_folder = f"/shares/departments/AUG/users/{getpass.getuser().lower()}/"
         self.config = Parameter.create(name='Configuration', type='group', visible=False, children=[
-            {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)', 'directory': default_folder},
-            {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)', 'directory': default_folder},
+            {'name': 'Save', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptSave', 'nameFilter': 'JSON Files (*.json)', 'directory': DEFAULT_FOLDER_CONFIG, 'selectFile': f"test22.json"},
+            {'name': 'Load', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'JSON Files (*.json)', 'directory': DEFAULT_FOLDER_CONFIG},
         ])
         self.config.child('Save').setValue('')
         self.config.child('Load').setValue('')
@@ -42,8 +41,8 @@ class ParameterPanels:
         ])
 
         self.sweep = Parameter.create(name='Sweep', type='group', visible=False, children=[
-            {'name': 'Sweep nº', 'type': 'float', 'value': 1, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
-            {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (1, 1)},
+            {'name': 'Sweep nº', 'type': 'float', 'value': 0, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
+            {'name': 'Sweep', 'title': ' ', 'type': 'slider', 'limits': (0, 0)},
             {'name': 'Timestamp', 'type': 'float', 'value': 0, 'suffix': 's', 'decimals': DECIMALS_TIMESTAMP, 'siPrefix': True, 'delay': 0},
         ])
 
@@ -54,6 +53,8 @@ class ParameterPanels:
             {'name': 'burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Scale', 'type': 'checklist', 'limits': ['Normalized', 'Linear', 'Logarithmic'], 'exclusive': True, 'delay': 0},
             {'name': 'Subtract background', 'type': 'bool', 'value': False, 'delay': 0},
+            {'name': 'Background sweep', 'type': 'float', 'value': 0, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
+            {'name': 'Background burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Subtract dispersion', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'},
             {'name': 'Filters', 'title': 'Filters (above dispersion)', 'type': 'group', 'children': [
@@ -61,6 +62,7 @@ class ParameterPanels:
                 {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
             ]},
             {'name': 'Exclude frequencies', 'type': 'group', 'addText': 'Add'},
+            {'name': 'Exclude region', 'type': 'group', 'addText': 'Add'},
         ])
 
         self.profiles = Parameter.create(name='Profiles', type='group', visible=False, children=[
