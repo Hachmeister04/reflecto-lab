@@ -8,7 +8,7 @@ from PyQt5.QtCore import QObject, QTimer
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
-    DECIMALS_EXCLUSIONS, 
+    DECIMALS_EXCLUSIONS, EXCLUSION_REGIONS_MAX_N,
     DEFAULT_PREFIX_HDF5, DEFAULT_POSTFIX_HDF5, DEFAULT_FOLDER_HDF5,
     DEFAULT_PREFIX_CONFIG, DEFAULT_POSTFIX_CONFIG, DEFAULT_FOLDER_CONFIG
 )
@@ -524,7 +524,9 @@ class AppController(QObject):
         d = m.detector
 
         pos = len(p.fft.child('Exclude frequencies').children())
-        if pos < 10:
+
+        # Don't allow more than N exclusion regions for shotfile compatibility
+        if pos < EXCLUSION_REGIONS_MAX_N:
             p.fft.child('Exclude frequencies').addChild({
                 'name': f'{pos + 1}', 'type': 'group', 'children': [
                     {'name': 'Enabled', 'type': 'bool', 'value': True},
