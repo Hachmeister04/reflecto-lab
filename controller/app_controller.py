@@ -756,6 +756,7 @@ class AppController(QObject):
             spect_params=m.spect_params,
             filters=m.filters,
             exclusion_filters=m.exclusion_filters,
+            exclusion_regions=m.exclusion_regions,
             burst_size=m.detector.burst_size,
             start_time=p.reconstruct.child('Start Time').value(),
             end_time=p.reconstruct.child('End Time').value(),

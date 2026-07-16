@@ -176,6 +176,7 @@ class ReconstructionInput:
     spect_params: dict = field(default_factory=dict)
     filters: dict = field(default_factory=dict)
     exclusion_filters: dict = field(default_factory=dict)
+    exclusion_regions: dict = field(default_factory=dict)
     burst_size: int = DEFAULT_BURST_SIZE
     background_burst_size: int = DEFAULT_BURST_SIZE
     start_time: float = DEFAULT_START_TIME
