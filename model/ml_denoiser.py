@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
-from rpspy.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
+from rpspy.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND, SPEC_H, SPEC_W
 
 # print(f'pyTorch version: {torch.__version__}')
 # NOISE_CHANNELS = 1
@@ -88,7 +88,7 @@ from rpspy.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
 #     return filename
 
 
-# WEIGHTS_BY_BAND_SIDE = {
+# WEIGHTS_BY_BAND = {
 #     ('K', 'HFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_K_HFS_3000_denoiser_d3.pth',
 #     ('K', 'LFS'): '/shares/departments/AUG/users/danielhfc/python/rpspy/ml_models/v2.2_K_LFS_3000_denoiser_d3.pth',
 #     # ('V', 'HFS'): 'v2.2_V_HFS_1500.pth',
@@ -104,7 +104,7 @@ from rpspy.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
 #     def __init__(self, band, side):
 #         self.band = band
 #         self.side = side
-#         weights_name = WEIGHTS_BY_BAND_SIDE.get((band, side))
+#         weights_name = WEIGHTS_BY_BAND.get((band, side))
 #         if weights_name is None:
 #             raise FileNotFoundError(
 #                 f"No ML denoiser weights available for band={band}, side={side}"

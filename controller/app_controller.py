@@ -139,8 +139,8 @@ class AppController(QObject):
         """Force the spect_params required by the ML denoiser on a single
         (band, side) pair. No-op if that pair has no trained weights.
         """
-        from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
-        if (band, side) not in WEIGHTS_BY_BAND_SIDE:
+        from model.ml_denoiser import WEIGHTS_BY_BAND
+        if f"{band}_{side}" not in WEIGHTS_BY_BAND:
             return
         sp = self.model.spect_params[side][band]
         sp.nperseg = self._ML_REQUIRED_PARAMS['nperseg']
@@ -150,19 +150,19 @@ class AppController(QObject):
 
     def _current_supports_ml(self):
         """True when the current (band, side) has ML denoiser weights."""
-        from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
+        from model.ml_denoiser import WEIGHTS_BY_BAND
         d = self.model.detector
-        return (d.band, d.side) in WEIGHTS_BY_BAND_SIDE
+        return f"{d.band}_{d.side}" in WEIGHTS_BY_BAND
 
     def _apply_ml_denoising_lock(self):
         """Make the ML-enforced FFT controls read-only when the current
         (band, side) has ML denoising enabled AND has trained weights.
         """
-        from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
+        from model.ml_denoiser import WEIGHTS_BY_BAND
         p = self.panels
         d = self.model.detector
         sp = self.model.spect_params[d.side][d.band]
-        readonly = sp.ml_denoising and (d.band, d.side) in WEIGHTS_BY_BAND_SIDE
+        readonly = sp.ml_denoising and f"{d.band}_{d.side}" in WEIGHTS_BY_BAND
         for name in ('nperseg', 'noverlap', 'nfft', 'Subtract dispersion'):
             p.fft.child(name).setOpts(readonly=readonly)
 

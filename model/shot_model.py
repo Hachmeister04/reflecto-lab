@@ -359,8 +359,8 @@ class ShotModel:
             Sxx = self.background_subtract(Sxx, band, side)
 
         if sp.ml_denoising:
-            from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
-            if (band, side) in WEIGHTS_BY_BAND_SIDE:
+            from model.ml_denoiser import WEIGHTS_BY_BAND
+            if f"{band}_{side}" in WEIGHTS_BY_BAND:
                 Sxx = self.apply_ml_denoising(Sxx, f_beat, band, side)
 
         y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
@@ -440,12 +440,12 @@ class ShotModel:
             values written into rows denoised_slice; other rows are untouched.
             denoised_slice is None when denoising was skipped.
         """
-        from model.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND_SIDE, SPEC_H, SPEC_W
+        from model.ml_denoiser import MLdenoising, WEIGHTS_BY_BAND, SPEC_H, SPEC_W
 
-        if (band, side) not in WEIGHTS_BY_BAND_SIDE:
+        if f"{band}_{side}" not in WEIGHTS_BY_BAND:
             return Sxx
         
-        height, width = SPEC_H[f"{band}-{side}"], SPEC_W[f"{band}-{side}"]
+        height, width = SPEC_H[f"{band}_{side}"], SPEC_W[f"{band}_{side}"]
 
         # Locate the first row at or above 0 Hz. For one-sided spectra this is
         # row 0; for two-sided fftshifted spectra (which K becomes when the
@@ -464,7 +464,7 @@ class ShotModel:
         try:
             denoiser = self._ml_denoisers.get(key)
             if denoiser is None:
-                denoiser = MLdenoising(band, side)
+                denoiser = MLdenoising(f"{band}_{side}")
                 self._ml_denoisers[key] = denoiser
         except (FileNotFoundError, OSError) as e:
             logger.warning("ML denoising unavailable: %s", e)
@@ -588,8 +588,8 @@ class ShotModel:
 
         # denoised_slice = None
         if sp.ml_denoising:
-            from model.ml_denoiser import WEIGHTS_BY_BAND_SIDE
-            if (d.band, d.side) in WEIGHTS_BY_BAND_SIDE:
+            from model.ml_denoiser import WEIGHTS_BY_BAND
+            if f"{d.band}_{d.side}" in WEIGHTS_BY_BAND:
                 self.current_fft.Sxx = self.apply_ml_denoising(
                     Sxx, fft.f_beat, d.band, d.side,
                 )
