@@ -135,8 +135,10 @@ class AppController(QObject):
         # Reconstruct
         self._h_recon_start = lambda: self._on_reconstruct_params_changed('start')
         self._h_recon_end = lambda: self._on_reconstruct_params_changed('end')
+        self._h_recon_step = lambda: self._on_reconstruct_params_changed('step')
         p.reconstruct.child('Start Time').sigValueChanged.connect(self._h_recon_start)
         p.reconstruct.child('End Time').sigValueChanged.connect(self._h_recon_end)
+        p.reconstruct.child('Time Step').sigValueChanged.connect(self._h_recon_step)
         p.reconstruct.child('Reconstruct Shot').sigActivated.connect(self._on_request_reconstruct)
         p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
 
@@ -221,6 +223,11 @@ class AppController(QObject):
         elif iv.type == 'From file':
             p.init.child('Value').setOpts(readonly=True)
             p.init.child('File').setOpts(visible=True)
+
+        # Reconstruction time range
+        p.reconstruct.child('Start Time').setValue(m.reconstruction_start_time, blockSignal=self._h_recon_start)
+        p.reconstruct.child('End Time').setValue(m.reconstruction_end_time, blockSignal=self._h_recon_end)
+        p.reconstruct.child('Time Step').setValue(m.reconstruction_time_step, blockSignal=self._h_recon_step)
 
     # --- Shot loading ---
 
@@ -734,7 +741,7 @@ class AppController(QObject):
     # --- Reconstruct params ---
 
     def _on_reconstruct_params_changed(self, source):
-        """Validate start/end times."""
+        """Validate start/end times and sync them into the model."""
         p = self.panels
         if source == 'start':
             if p.reconstruct.child('Start Time').value() > p.reconstruct.child('End Time').value():
@@ -748,6 +755,11 @@ class AppController(QObject):
                     p.reconstruct.child('End Time').value(),
                     blockSignal=self._h_recon_start,
                 )
+        
+        m = self.model
+        m.reconstruction_start_time = p.reconstruct.child('Start Time').value()
+        m.reconstruction_end_time = p.reconstruct.child('End Time').value()
+        m.reconstruction_time_step = p.reconstruct.child('Time Step').value()
 
     def _on_cutoff_changed(self):
         """Toggle density cutoff visibility."""

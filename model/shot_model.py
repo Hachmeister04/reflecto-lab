@@ -18,6 +18,7 @@ from constants import (
     BANDS, SIDES,
     DEFAULT_LINEARIZATION_SWEEP,
     PROFILE_INVERSION_RESOLUTION,
+    DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP,
 )
 from model.state import (
     SpectrogramParams, FilterRange, ExclusionRange, ExclusionRegion,
@@ -66,6 +67,11 @@ class ShotModel:
 
         # Current detector selection
         self.detector = DetectorSelection()
+
+        # Reconstruction time range
+        self.reconstruction_start_time = DEFAULT_START_TIME
+        self.reconstruction_end_time = DEFAULT_END_TIME
+        self.reconstruction_time_step = DEFAULT_TIMESTEP
 
         # Current computed data
         self.current_sweep = CurrentSweepData()
@@ -596,6 +602,11 @@ class ShotModel:
             'burst_size': self.detector.burst_size,
             'exclusion_filters': exclusions_dict,
             'exclusion_regions': regions_dict,
+            'reconstruction_times': {
+                'start_time': self.reconstruction_start_time,
+                'end_time': self.reconstruction_end_time,
+                'time_step': self.reconstruction_time_step,
+            },
         }
 
         with open(path, 'w') as f:
@@ -639,3 +650,9 @@ class ShotModel:
                     self.exclusion_regions[side][band] = [
                         ExclusionRegion.from_config_list(r) for r in regions[side][band]
                     ]
+        
+        # Older config files have no 'reconstruction_times' key; keep current values then.
+        recon_times = data.get('reconstruction_times', {})
+        self.reconstruction_start_time = recon_times.get('start_time', self.reconstruction_start_time)
+        self.reconstruction_end_time = recon_times.get('end_time', self.reconstruction_end_time)
+        self.reconstruction_time_step = recon_times.get('time_step', self.reconstruction_time_step)

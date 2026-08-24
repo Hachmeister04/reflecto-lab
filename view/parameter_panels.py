@@ -4,7 +4,7 @@ from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE, DEFAULT_POSTFIX_CONFIG,
     MAX_BURST_SIZE,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH,
-    DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, DEFAULT_DENSITY_CUTOFF,
+    DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, DECIMALS_TIMES, DEFAULT_DENSITY_CUTOFF,
     DECIMALS_SWEEP_NUM, DECIMALS_TIMESTAMP,
     DECIMALS_NPERSEG, DECIMALS_NOVERLAP, DECIMALS_NFFT,
     DECIMALS_EXCLUSIONS, DECIMALS_INIT, DEFAULT_FOLDER_CONFIG
@@ -71,8 +71,8 @@ class ParameterPanels:
         ])
 
         self.reconstruct = Parameter.create(name='Reconstruct Shot', type='group', visible=False, children=[
-            {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
-            {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'delay': 0},
+            {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_TIMES, 'delay': 0},
+            {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_TIMES, 'delay': 0},
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True, 'delay': 0},
             {'name': 'Apply Custom Density Cutoff', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Density Cutoff', 'type': 'float', 'value': DEFAULT_DENSITY_CUTOFF, 'suffix': 'm^-3', 'siPrefix': False, 'delay': 0},
