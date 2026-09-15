@@ -3,6 +3,8 @@ import os
 import time
 import logging
 import numpy as np
+import aug_sfutils as sf
+from scipy.interpolate import interp1d
 from PyQt5.QtWidgets import QApplication, QFileDialog
 from PyQt5.QtCore import QObject, QTimer
 
@@ -40,6 +42,10 @@ class AppController(QObject):
         self.view = MainWindowView()
         self.view.set_parameter_panels(self.panels)
         self.renderer = PlotRenderer()
+
+        # Density cutoff value (for reconstruction)
+        self.density_cutoff_times = None
+        self.density_cutoff_values = None
 
         # Track open reconstruction windows
         self._reconstruction_windows = []
@@ -142,6 +148,7 @@ class AppController(QObject):
         p.reconstruct.child('Reconstruct Shot').sigActivated.connect(self._on_request_reconstruct)
         #p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
         p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
+        p.reconstruct.child('Density Cutoff Value').sigValueChanged.connect(self._on_cutoff_changed)
 
     # --- Helpers to sync model ↔ panels ---
 
@@ -264,7 +271,6 @@ class AppController(QObject):
         # Except parameters that default to hidden states
         #p.reconstruct.child('Apply Custom Density Cutoff').setOpts(readonly=True)
         #p.reconstruct.child('Apply Custom Density Cutoff').setOpts(visible=False)
-        self._on_cutoff_changed()  # Update visibility of density cutoff value
 
         # Sync detector
         self._sync_detector_from_panels()
@@ -276,7 +282,7 @@ class AppController(QObject):
 
         # Full recompute + draw
         self._recompute_and_draw_all()
-
+        self._on_cutoff_changed() #this is just to read the density values, it redraws the profile at the end of the function anyway
         # Set parameter limits
         ts = m.time_stamps
         p.sweep.child('Sweep').setLimits((0, len(ts) - 1))
@@ -772,11 +778,26 @@ class AppController(QObject):
         if value == 'Custom':
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(title='Density Cutoff Value')
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=True, suffix='m^-3', siPrefix=False, delay=0)
+            ne_cutoff = self.panels.reconstruct.child('Density Cutoff Value').value()
+            self.density_cutoff_times = np.array([0, 10])
+            self.density_cutoff_values = np.array([ne_cutoff, ne_cutoff])
         elif value in ['H-0', 'H-1']:
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(title=f'Density Cutoff Multiplier')
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=True, suffix='', siPrefix=False, delay=0)
+            ne_mult = self.panels.reconstruct.child('Density Cutoff Value').value()
+            try:
+                shotfile_density_cutoff = sf.SFREAD(self.model.shot, "DCK")
+                self.density_cutoff_times = shotfile_density_cutoff.gettimebase(value)
+                self.density_cutoff_values = shotfile_density_cutoff(value) * ne_mult
+            except Exception as e:
+                shotfile_density_cutoff = sf.SFREAD(self.model.shot, "DCN")
+                self.density_cutoff_times = shotfile_density_cutoff.gettimebase(value)
+                self.density_cutoff_values = shotfile_density_cutoff(value) * ne_mult
         elif value == 'None':
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=False)
+            self.density_cutoff_times = None
+            self.density_cutoff_values = None
+        self._draw_profile()
 
     # --- Reconstruction ---
 
@@ -943,4 +964,8 @@ class AppController(QObject):
         timestamp = p.sweep.child('Timestamp').value()
 
         r_HFS, ne_HFS, r_LFS, ne_LFS = m.compute_profile(coord, timestamp)
-        self.renderer.draw_profile(self.view.plot_profile, r_HFS, ne_HFS, r_LFS, ne_LFS, coord)
+        try:
+            ne_max = interp1d(self.density_cutoff_times, self.density_cutoff_values, bounds_error=False, fill_value="extrapolate")(timestamp)
+        except:
+            ne_max = None
+        self.renderer.draw_profile(self.view.plot_profile, r_HFS, ne_HFS, r_LFS, ne_LFS, coord, ne_max)

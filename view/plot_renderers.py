@@ -256,7 +256,7 @@ class PlotRenderer:
                     else:
                         curve.setData([], [])
 
-    def draw_profile(self, plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode):
+    def draw_profile(self, plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode, ne_max=None):
         """Draw density profile.
 
         Uses persistent PlotDataItem curves updated via setData().
@@ -266,10 +266,23 @@ class PlotRenderer:
             self._prof_lfs = plot_widget.plot(pen=pg.mkPen(color=LFS_COLOR, width=2))
             plot_widget.setLabel('left', 'density', units='1e19 m^-3')
             self._prof_ready = True
+            
+            self._prof_hfs_over = plot_widget.plot(pen=pg.mkPen(color=HFS_COLOR, width=2, style=QtCore.Qt.DashLine))
+            self._prof_lfs_over = plot_widget.plot(pen=pg.mkPen(color=LFS_COLOR, width=2, style=QtCore.Qt.DashLine))
 
-        self._prof_hfs.setData(r_HFS, ne_HFS * 1e-19)
-        self._prof_lfs.setData(r_LFS, ne_LFS * 1e-19)
-
+        if ne_max is not None:
+            _mask_lfs = ne_LFS > ne_max
+            _mask_hfs = ne_HFS > ne_max
+            self._prof_hfs_over.setData(r_HFS[_mask_hfs], ne_HFS[_mask_hfs] * 1e-19)
+            self._prof_lfs_over.setData(r_LFS[_mask_lfs], ne_LFS[_mask_lfs] * 1e-19)
+            self._prof_hfs.setData(r_HFS[~_mask_hfs], ne_HFS[~_mask_hfs] * 1e-19)
+            self._prof_lfs.setData(r_LFS[~_mask_lfs], ne_LFS[~_mask_lfs] * 1e-19)
+        else:
+            self._prof_hfs.setData(r_HFS, ne_HFS * 1e-19)
+            self._prof_lfs.setData(r_LFS, ne_LFS * 1e-19)
+            self._prof_hfs.setData([], [] * 1e-19)
+            self._prof_lfs.setData([], [] * 1e-19)
+            
         x_label = 'radius'
         x_units = 'm' if coordinate_mode == 'R (m)' else ''
         plot_widget.setLabel('bottom', x_label, units=x_units)
