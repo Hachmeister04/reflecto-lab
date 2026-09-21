@@ -280,8 +280,8 @@ class PlotRenderer:
         else:
             self._prof_hfs.setData(r_HFS, ne_HFS * 1e-19)
             self._prof_lfs.setData(r_LFS, ne_LFS * 1e-19)
-            self._prof_hfs.setData([], [] * 1e-19)
-            self._prof_lfs.setData([], [] * 1e-19)
+            self._prof_hfs_over.setData([], [])
+            self._prof_lfs_over.setData([], [])
             
         x_label = 'radius'
         x_units = 'm' if coordinate_mode == 'R (m)' else ''
