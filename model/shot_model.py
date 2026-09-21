@@ -609,7 +609,9 @@ class ShotModel:
             'filters': filters_dict,
             'burst_size': self.detector.burst_size,
             'frequency_exclusions': exclusions_dict,
+            'exclusion_filters': exclusions_dict,  # for backward compatibility
             'spectrogram_masks': masks_dict,
+            'exclusion_regions': masks_dict,  # for backward compatibility
             'reconstruction_times': {
                 'start_time': self.reconstruction_start_time,
                 'end_time': self.reconstruction_end_time,
