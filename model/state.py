@@ -6,7 +6,7 @@ from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH, DEFAULT_BURST_SIZE,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP,
-    DEFAULT_DENSITY_CUTOFF,
+    DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
 )
 
 
@@ -196,6 +196,7 @@ class ReconstructionInput:
     density_cutoff_values: Optional[np.ndarray] = None
     custom_density_cutoff: bool = False #TODO: remove this variable
     density_cutoff_value: float = DEFAULT_DENSITY_CUTOFF #TODO: remove this variable
+    density_cutoff_multiplier: float = DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
     write_private_shotfile: bool = False
     write_public_shotfile: bool = False
     write_hdf5: bool = True

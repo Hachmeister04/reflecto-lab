@@ -810,18 +810,18 @@ class AppController(QObject):
             try:
                 print(f"Loading density cutoff from file: {path}")
                 data = np.atleast_2d(np.load(path))
-                self.density_cutoff_times = data[:, 0]
-                self.density_cutoff_values = data[:, 1]
+                self.model.density_cutoff_times = data[:, 0]
+                self.model.density_cutoff_values = data[:, 1]
             except Exception as e:
                 logger.error("Failed to load density cutoff from file: %s", e)
-                self.density_cutoff_times = None
-                self.density_cutoff_values = None
+                self.model.density_cutoff_times = None
+                self.model.density_cutoff_values = None
         elif value == 'None':
             self.panels.reconstruct.child('Density Cutoff Multiplier').setOpts(visible=False)
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=False)
             self.panels.reconstruct.child('Density Cutoff File').setOpts(visible=False)
-            self.density_cutoff_times = None
-            self.density_cutoff_values = None
+            self.model.density_cutoff_times = None
+            self.model.density_cutoff_values = None
         self._draw_profile()
 
     # --- Reconstruction ---
@@ -858,11 +858,9 @@ class AppController(QObject):
             start_time=p.reconstruct.child('Start Time').value(),
             end_time=p.reconstruct.child('End Time').value(),
             time_step=p.reconstruct.child('Time Step').value(),
-            custom_density_cutoff=None,#p.reconstruct.child('Apply Custom Density Cutoff').value(), #TODO:remove this variable as density_cutoff value is already passed in density_cutoff_values
             density_cutoff_times=self.density_cutoff_times,
             density_cutoff_values=self.density_cutoff_values,
-            density_cutoff_value=None, #p.reconstruct.child('Density Cutoff Value').value(), #TODO:remove this variable as density_cutoff value is already passed in density_cutoff_values
-            density_cutoff_multiplier=None, #p.reconstruct.child('Density Cutoff Multiplier').value(), #TODO:remove this variable as density_cutoff value is already passed in density_cutoff_values
+            custom_density_cutoff=self.model.custom_density_cutoff,
             write_private_shotfile=p.reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=p.reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             write_hdf5=write_hdf5,

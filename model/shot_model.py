@@ -19,7 +19,7 @@ from constants import (
     DEFAULT_LINEARIZATION_SWEEP,
     PROFILE_INVERSION_RESOLUTION,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, 
-    DEFAULT_CUSTOM_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_VALUE
+    DEFAULT_CUSTOM_DENSITY_CUTOFF, DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
 )
 from model.state import (
     SpectrogramParams, FilterRange, FrequencyExclusion, SpectrogramMask,
@@ -97,10 +97,11 @@ class ShotModel:
         self.get_init = None
 
         # Custom density cutoff
-        self.custom_density_cutoff = DEFAULT_CUSTOM_DENSITY_CUTOFF
-        self.custom_density_cutoff_value = DEFAULT_CUSTOM_DENSITY_CUTOFF_VALUE
-        self.density_cutoff_times = None
-        self.density_cutoff_values = None
+        self.custom_density_cutoff = DEFAULT_CUSTOM_DENSITY_CUTOFF 
+        self.custom_density_cutoff_value = DEFAULT_DENSITY_CUTOFF
+        self.custom_density_cutoff_multiplier = DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
+        #self.density_cutoff_times = None
+        #self.density_cutoff_values = None
 
     # --- Shot loading ---
 
@@ -620,8 +621,9 @@ class ShotModel:
                 'time_step': self.reconstruction_time_step,
             },
             'custom_density_cutoff': {
-                'custom_density_cutoff': self.custom_density_cutoff,
+                'custom_density_cutoff': self.custom_density_cutoff, #TODO: best to save the array of times and densities??
                 'custom_density_cutoff_value': self.custom_density_cutoff_value,
+                'custom_density_cutoff_multiplier': self.custom_density_cutoff_multiplier,
             },
         }
 
@@ -687,3 +689,4 @@ class ShotModel:
         custom_density_cutoff = data.get('custom_density_cutoff',  {})
         self.custom_density_cutoff = custom_density_cutoff.get('custom_density_cutoff', self.custom_density_cutoff)
         self.custom_density_cutoff_value = custom_density_cutoff.get('custom_density_cutoff_value', self.custom_density_cutoff_value)
+        self.custom_density_cutoff_multiplier = custom_density_cutoff.get('custom_density_cutoff_multiplier', self.custom_density_cutoff_multiplier)
