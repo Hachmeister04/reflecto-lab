@@ -146,9 +146,10 @@ class AppController(QObject):
         p.reconstruct.child('End Time').sigValueChanged.connect(self._h_recon_end)
         p.reconstruct.child('Time Step').sigValueChanged.connect(self._h_recon_step)
         p.reconstruct.child('Reconstruct Shot').sigActivated.connect(self._on_request_reconstruct)
-        #p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
         p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
+        p.reconstruct.child('Density Cutoff File').sigValueChanged.connect(self._on_cutoff_changed)
         p.reconstruct.child('Density Cutoff Value').sigValueChanged.connect(self._on_cutoff_changed)
+        p.reconstruct.child('Density Cutoff Multiplier').sigValueChanged.connect(self._on_cutoff_changed)
 
     # --- Helpers to sync model ↔ panels ---
 
@@ -776,15 +777,21 @@ class AppController(QObject):
         """Toggle density cutoff visibility."""
         value = self.panels.reconstruct.child('Apply Custom Density Cutoff').value()
         if value == 'Custom':
-            self.panels.reconstruct.child('Density Cutoff Value').setOpts(title='Density Cutoff Value')
-            self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=True, suffix='m^-3', siPrefix=False, delay=0)
+            # Make the density cutoff value visible, hide the file input, hide the multiplier input
+            self.panels.reconstruct.child('Density Cutoff Value').setOpts(title='Density Cutoff Value', visible=True, suffix='m^-3', siPrefix=False, delay=0)
+            self.panels.reconstruct.child('Density Cutoff File').setOpts(visible=False)
+            self.panels.reconstruct.child('Density Cutoff Multiplier').setOpts(visible=False)
+
             ne_cutoff = self.panels.reconstruct.child('Density Cutoff Value').value()
             self.density_cutoff_times = np.array([0, 10])
             self.density_cutoff_values = np.array([ne_cutoff, ne_cutoff])
         elif value in ['H-0', 'H-1']:
-            self.panels.reconstruct.child('Density Cutoff Value').setOpts(title=f'Density Cutoff Multiplier')
-            self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=True, suffix='', siPrefix=False, delay=0)
-            ne_mult = self.panels.reconstruct.child('Density Cutoff Value').value()
+            # Make the density cutoff value visible, change its title, show the multiplier, and hide the file input
+            self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=False)
+            self.panels.reconstruct.child('Density Cutoff File').setOpts(visible=False)
+            self.panels.reconstruct.child('Density Cutoff Multiplier').setOpts(visible=True)
+
+            ne_mult = self.panels.reconstruct.child('Density Cutoff Multiplier').value()
             try:
                 shotfile_density_cutoff = sf.SFREAD(self.model.shot, "DCK")
                 self.density_cutoff_times = shotfile_density_cutoff.gettimebase(value)
@@ -793,8 +800,26 @@ class AppController(QObject):
                 shotfile_density_cutoff = sf.SFREAD(self.model.shot, "DCN")
                 self.density_cutoff_times = shotfile_density_cutoff.gettimebase(value)
                 self.density_cutoff_values = shotfile_density_cutoff(value) * ne_mult
-        elif value == 'None':
+        elif value == 'From file':
+            #TODO: the reading of the file could be in a separate function, and the file could be read when the user selects it, not when the user selects "From file"
+            # Make the density cutoff file input visible, hide the density cutoff value input, and hide the multiplier input
+            self.panels.reconstruct.child('Density Cutoff Multiplier').setOpts(visible=False)
+            self.panels.reconstruct.child('Density Cutoff File').setOpts(visible=True)
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=False)
+            path = self.panels.reconstruct.child('Density Cutoff File').value()
+            try:
+                print(f"Loading density cutoff from file: {path}")
+                data = np.atleast_2d(np.load(path))
+                self.density_cutoff_times = data[:, 0]
+                self.density_cutoff_values = data[:, 1]
+            except Exception as e:
+                logger.error("Failed to load density cutoff from file: %s", e)
+                self.density_cutoff_times = None
+                self.density_cutoff_values = None
+        elif value == 'None':
+            self.panels.reconstruct.child('Density Cutoff Multiplier').setOpts(visible=False)
+            self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=False)
+            self.panels.reconstruct.child('Density Cutoff File').setOpts(visible=False)
             self.density_cutoff_times = None
             self.density_cutoff_values = None
         self._draw_profile()
@@ -833,8 +858,11 @@ class AppController(QObject):
             start_time=p.reconstruct.child('Start Time').value(),
             end_time=p.reconstruct.child('End Time').value(),
             time_step=p.reconstruct.child('Time Step').value(),
-            custom_density_cutoff=p.reconstruct.child('Apply Custom Density Cutoff').value(),
-            density_cutoff_value=p.reconstruct.child('Density Cutoff Value').value(),
+            custom_density_cutoff=None,#p.reconstruct.child('Apply Custom Density Cutoff').value(), #TODO:remove this variable as density_cutoff value is already passed in density_cutoff_values
+            density_cutoff_times=self.density_cutoff_times,
+            density_cutoff_values=self.density_cutoff_values,
+            density_cutoff_value=None, #p.reconstruct.child('Density Cutoff Value').value(), #TODO:remove this variable as density_cutoff value is already passed in density_cutoff_values
+            density_cutoff_multiplier=None, #p.reconstruct.child('Density Cutoff Multiplier').value(), #TODO:remove this variable as density_cutoff value is already passed in density_cutoff_values
             write_private_shotfile=p.reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=p.reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             write_hdf5=write_hdf5,

@@ -112,6 +112,8 @@ class ReconstructionWorker(QObject):
                 return_profiles=False,
                 initialization_lfs=params.get_init_lfs,
                 initialization_hfs=params.get_init_hfs,
+                density_cutoff_times=params.density_cutoff_times,
+                density_cutoff_values=params.density_cutoff_values,
                 custom_density_cutoff=params.custom_density_cutoff if params.custom_density_cutoff else None,
                 density_cutoff_value=params.density_cutoff_value if params.density_cutoff_value else None,
                 background_sweeps=background_sweeps,

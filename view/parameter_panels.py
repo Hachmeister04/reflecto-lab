@@ -8,7 +8,7 @@ from constants import (
     DECIMALS_SWEEP_NUM, DECIMALS_TIMESTAMP,
     DECIMALS_NPERSEG, DECIMALS_NOVERLAP, DECIMALS_NFFT,
     DECIMALS_EXCLUSIONS, DECIMALS_INIT, DEFAULT_FOLDER_CONFIG,
-    DEFAULT_CUSTOM_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_VALUE
+    DEFAULT_CUSTOM_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_VALUE, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
 )
 
 
@@ -75,8 +75,10 @@ class ParameterPanels:
             {'name': 'Start Time', 'type': 'float', 'value': DEFAULT_START_TIME, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_TIMES, 'delay': 0},
             {'name': 'End Time', 'type': 'float', 'value': DEFAULT_END_TIME, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_TIMES, 'delay': 0},
             {'name': 'Time Step', 'type': 'float', 'value': DEFAULT_TIMESTEP, 'suffix': 's', 'siPrefix': True, 'delay': 0},
-            {'name': 'Apply Custom Density Cutoff', 'type': 'list', 'limits': ['H-0', 'H-1', 'Custom', 'None'], 'value': DEFAULT_CUSTOM_DENSITY_CUTOFF},
-            {'name': 'Density Cutoff Value', 'type': 'float', 'value': DEFAULT_CUSTOM_DENSITY_CUTOFF_VALUE, 'delay': 0},
+            {'name': 'Apply Custom Density Cutoff', 'type': 'list', 'limits': ['H-0', 'H-1', 'Custom', 'From file', 'None'], 'value': DEFAULT_CUSTOM_DENSITY_CUTOFF},
+            {'name': 'Density Cutoff Value', 'type': 'float', 'value': DEFAULT_DENSITY_CUTOFF, 'delay': 0},
+            {'name': 'Density Cutoff Multiplier', 'type': 'float', 'value': DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER, 'delay': 0},
+            {'name': 'Density Cutoff File', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'Numpy Files (*.npy)', 'visible': False, 'delay': 0},
             {'name': 'Reconstruct Shot', 'type': 'action'},
             {'name': 'Reconstruction Output', 'title': 'Reconstruction Output', 'type': 'group', 'children': [
                 {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},

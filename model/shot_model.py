@@ -99,6 +99,8 @@ class ShotModel:
         # Custom density cutoff
         self.custom_density_cutoff = DEFAULT_CUSTOM_DENSITY_CUTOFF
         self.custom_density_cutoff_value = DEFAULT_CUSTOM_DENSITY_CUTOFF_VALUE
+        self.density_cutoff_times = None
+        self.density_cutoff_values = None
 
     # --- Shot loading ---
 
