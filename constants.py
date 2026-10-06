@@ -3,6 +3,12 @@ import getpass
 # Detector configurations
 BANDS = ('K', 'Ka', 'Q', 'V')
 SIDES = ('HFS', 'LFS')
+# Frequency range of the reflectometer
+# This is used in setting the limits of the frequencies in the frequency exclusion parameters. 
+# They should be slightly smaller and larger, respectively, than the actual frequency range of the reflectometer.
+# This allows the user to easly remove the first point of the frequency range, WITHOUT REMOVING THE INITIALIZATION POINT.
+FP_MIN = 16e9 
+FP_MAX = 76e9
 
 # Window
 WINDOW_SIZE = (1600, 800)

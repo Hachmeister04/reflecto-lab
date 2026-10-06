@@ -63,6 +63,7 @@ class ParameterPanels:
                 {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
                 {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
             ]},
+            {'name': 'Allow time dependant frequency exclusions', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Exclude frequencies', 'type': 'group', 'addText': 'Add'},
             {'name': 'Spectrogram masks', 'type': 'group', 'addText': 'Add'},
         ])

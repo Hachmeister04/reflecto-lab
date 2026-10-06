@@ -12,7 +12,8 @@ from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
     DECIMALS_EXCLUSIONS, FREQUENCY_EXCLUSIONS_MAX_N, SPECTROGRAM_MASKS_MAX_N,
     DEFAULT_PREFIX_HDF5, DEFAULT_POSTFIX_HDF5, DEFAULT_FOLDER_HDF5,
-    DEFAULT_PREFIX_CONFIG, DEFAULT_POSTFIX_CONFIG, DEFAULT_FOLDER_CONFIG
+    DEFAULT_PREFIX_CONFIG, DEFAULT_POSTFIX_CONFIG, DEFAULT_FOLDER_CONFIG,
+    FP_MIN, FP_MAX
 )
 from model.shot_model import ShotModel
 from model.state import ReconstructionInput, FrequencyExclusion, SpectrogramMask
@@ -133,6 +134,7 @@ class AppController(QObject):
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
         p.fft.child('Filters').child('High Filter').sigValueChanged.connect(self._h_fft_high)
         p.fft.child('Exclude frequencies').sigAddNew.connect(self._on_add_frequency_exclusion)
+        p.fft.child('Allow time dependant frequency exclusions').sigValueChanged.connect(self._on_allow_time_dependant_frequency_exclusions_changed)
         p.fft.child('Spectrogram masks').sigAddNew.connect(self._on_add_spectrogram_mask)
 
         # Profiles
@@ -199,6 +201,8 @@ class AppController(QObject):
             children[-1].child('Enabled').setValue(excl.enabled, blockSignal=self._on_frequency_exclusion_changed)
             children[-1].child('from').setValue(excl.low, blockSignal=self._on_frequency_exclusion_changed)
             children[-1].child('to').setValue(excl.high, blockSignal=self._on_frequency_exclusion_changed)
+            children[-1].child('tmin').setValue(excl.t_min, blockSignal=self._on_frequency_exclusion_changed)
+            children[-1].child('tmax').setValue(excl.t_max, blockSignal=self._on_frequency_exclusion_changed)
         self._suppress_model_sync = False
 
         # Update 2D spectrogram mask UI (per band+side)
@@ -569,13 +573,17 @@ class AppController(QObject):
 
         pos = len(p.fft.child('Exclude frequencies').children())
 
+        show_time_range = p.fft.child('Allow time dependant frequency exclusions').value()
+
         # Don't allow more than N exclusions for shotfile compatibility
         if pos < FREQUENCY_EXCLUSIONS_MAX_N:
             p.fft.child('Exclude frequencies').addChild({
                 'name': f'{pos + 1}', 'type': 'group', 'children': [
                     {'name': 'Enabled', 'type': 'bool', 'value': True},
-                    {'name': 'from', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
-                    {'name': 'to', 'type': 'float', 'value': 0, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS},
+                    {'name': 'from', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
+                    {'name': 'to', 'type': 'float', 'value': FP_MAX, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
+                    {'name': 'tmin', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
+                    {'name': 'tmax', 'type': 'float', 'value': 10.0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
                     {'name': 'Remove', 'type': 'action'},
                 ]
             })
@@ -584,6 +592,8 @@ class AppController(QObject):
             child.child('Enabled').sigValueChanged.connect(self._on_frequency_exclusion_changed)
             child.child('from').sigValueChanged.connect(self._on_frequency_exclusion_changed)
             child.child('to').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+            child.child('tmin').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+            child.child('tmax').sigValueChanged.connect(self._on_frequency_exclusion_changed)
             child.child('Remove').sigActivated.connect(self._on_remove_frequency_exclusion)
 
             if not self._suppress_model_sync:
@@ -622,13 +632,49 @@ class AppController(QObject):
         elif sender.name() == 'to':
             if sender.value() < sender.parent().child('from').value():
                 sender.parent().child('from').setValue(sender.value(), blockSignal=self._on_frequency_exclusion_changed)
+        elif sender.name() == 'tmin':
+            if sender.value() > sender.parent().child('tmax').value():
+                sender.parent().child('tmax').setValue(sender.value(), blockSignal=self._on_frequency_exclusion_changed)
+        elif sender.name() == 'tmax':
+            if sender.value() < sender.parent().child('tmin').value():
+                sender.parent().child('tmin').setValue(sender.value(), blockSignal=self._on_frequency_exclusion_changed)
 
         exclusion_num = int(sender.parent().name())
         d = self.model.detector
         excl = self.model.frequency_exclusions[d.side][exclusion_num - 1]
         excl.low = sender.parent().child('from').value()
         excl.high = sender.parent().child('to').value()
+        excl.t_min = sender.parent().child('tmin').value()
+        excl.t_max = sender.parent().child('tmax').value()
         excl.enabled = sender.parent().child('Enabled').value()
+
+        self._draw_spectrogram()
+        self._draw_group_delays()
+        self._draw_profile()
+
+
+    def _on_allow_time_dependant_frequency_exclusions_changed(self):
+        """Allow time-dependant frequency exclusions to be applied to the spectrogram."""
+        sender = self.sender()
+        p = self.panels
+        m = self.model
+        d = m.detector
+
+        value = p.fft.child('Allow time dependant frequency exclusions').value()
+
+        if value is True:
+            for i, excl in enumerate(m.frequency_exclusions[d.side]):
+                excl.t_min = 0.0
+                excl.t_max = 10.0
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(visible=True)
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(visible=True)
+        else:
+            for i, excl in enumerate(m.frequency_exclusions[d.side]):
+                excl.t_min = 0.0
+                excl.t_max = 10.0
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(visible=False)
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(visible=False)
+
 
         self._draw_spectrogram()
         self._draw_group_delays()
@@ -894,6 +940,9 @@ class AppController(QObject):
     def _on_load_config(self):
         """Load configuration from file."""
         path = self.panels.config.child('Load').value()
+        #TODO: there must be a smarter way to do this 
+        # make sure that the time dependant frequency exclusions are enabled when loading a config. Otherwise, when user activates the time dependant frequency exclusions, the tmin and tmax will be initialized to 0 and 10
+        self.panels.fft.child('Allow time dependant frequency exclusions').setValue(True,) 
         self.model.load_config(path)
         self._sync_params_to_panels()
 
@@ -959,15 +1008,16 @@ class AppController(QObject):
             self.view.colorBar,
         )
 
+        timestamp = m.time_stamps[d.sweep] if m.time_stamps is not None else 0
+
         self.renderer.draw_dispersion_line(self.view.plot_spect, fft.f_probe, disp.y_dis)
         self.renderer.draw_filter_lines(self.view.plot_spect, fft.f_probe, disp.y_dis, filt.low, filt.high)
         self.renderer.draw_beatf_on_spectrogram(
             self.view.plot_spect, fft.f_probe, disp.y_beatf,
-            m.frequency_exclusions[d.side], d.side,
+            m.frequency_exclusions[d.side], d.side, timestamp
         )
 
         # Shade the 2D spectrogram masks active for the current sweep.
-        timestamp = m.time_stamps[d.sweep] if m.time_stamps is not None else 0
         self.renderer.draw_spectrogram_masks(
             self.view.plot_spect, m.spectrogram_masks[d.side][d.band],
             timestamp, fft.f_probe, fft.f_beat,
@@ -976,10 +1026,12 @@ class AppController(QObject):
     def _draw_group_delays(self):
         """Compute aggregated delays and render group delay plot."""
         m = self.model
-        m.compute_aggregated_delays()
+        d = m.detector
+        timestamp = m.time_stamps[d.sweep] if m.time_stamps is not None else 0
+        m.compute_aggregated_delays(timestamp)
         self.renderer.draw_group_delays(
             self.view.plot_beatf, m.beat_frequencies, m.frequency_exclusions,
-            m.aggregated_hfs, m.aggregated_lfs,
+            m.aggregated_hfs, m.aggregated_lfs, timestamp
         )
 
     def _draw_profile(self):

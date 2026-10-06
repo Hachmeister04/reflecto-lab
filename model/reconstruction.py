@@ -72,7 +72,7 @@ class ReconstructionWorker(QObject):
             frequency_exclusions = {}
             for side in ['HFS', 'LFS']:
                 frequency_exclusions[side] = [
-                    [e.low, e.high] for e in params.frequency_exclusions[side] if e.enabled
+                    [e.low, e.high, e.t_min, e.t_max] for e in params.frequency_exclusions[side] if e.enabled
                 ]
 
             # Convert SpectrogramMask objects to the flat 6-element boxes rpspy expects:

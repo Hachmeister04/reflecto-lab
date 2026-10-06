@@ -150,7 +150,7 @@ class PlotRenderer:
         self._spec_filt_low.setData(f_probe, y_dis + filter_low)
         self._spec_filt_high.setData(f_probe, y_dis + filter_high)
 
-    def draw_beatf_on_spectrogram(self, plot_widget, f_probe, y_beatf, frequency_exclusions, side):
+    def draw_beatf_on_spectrogram(self, plot_widget, f_probe, y_beatf, frequency_exclusions, side, timestamp):
         """Draw beat frequency curve + frequency-exclusion overlays on spectrogram."""
         if self._spec_beatf is None:
             self._spec_beatf = plot_widget.plot(pen=pg.mkPen(color='r', width=2))
@@ -163,8 +163,11 @@ class PlotRenderer:
         for i, curve in enumerate(self._spec_excl):
             if i < len(frequency_exclusions) and frequency_exclusions[i].enabled:
                 excl = frequency_exclusions[i]
-                mask = (f_probe >= excl.low) & (f_probe <= excl.high)
-                curve.setData(f_probe[mask], y_beatf[mask])
+                if (excl.t_min <= timestamp <= excl.t_max):
+                    mask = (f_probe >= excl.low) & (f_probe <= excl.high)
+                    curve.setData(f_probe[mask], y_beatf[mask])
+                else:
+                    curve.setData([], [])
             else:
                 curve.setData([], [])
 
@@ -211,7 +214,7 @@ class PlotRenderer:
                 rect.setVisible(False)
 
     def draw_group_delays(self, plot_widget, beat_frequencies, frequency_exclusions,
-                          aggregated_hfs, aggregated_lfs):
+                          aggregated_hfs, aggregated_lfs, timestamp):
         """Draw the group delay plot with all beat frequencies.
 
         Uses persistent PlotDataItem curves updated via setData() to avoid
@@ -251,8 +254,11 @@ class PlotRenderer:
                     curve = self._gd_excl[(side, band, i)]
                     if i < len(excls) and excls[i].enabled:
                         excl = excls[i]
-                        mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
-                        curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
+                        if (excl.t_min <= timestamp) and (timestamp <= excl.t_max):
+                            mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
+                            curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
+                        else:
+                            curve.setData([], [])
                     else:
                         curve.setData([], [])
 

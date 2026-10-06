@@ -67,15 +67,24 @@ class FrequencyExclusion:
     """
     low: float = 0.0
     high: float = 0.0
+    t_min: float = 0.0
+    t_max: float = 10.0
     enabled: bool = True
 
     def to_config_list(self):
-        return [self.low, self.high]
+        return [self.low, self.high, self.t_min, self.t_max]
 
     @classmethod
     def from_config_list(cls, lst):
         # Loaded exclusions are always enabled.
-        return cls(low=lst[0], high=lst[1], enabled=True)
+        if len(lst) == 4:
+            print("Loading frequency exclusion with 4 values:", lst)
+            return cls(low=lst[0], high=lst[1], t_min=lst[2], t_max=lst[3], enabled=True)
+        elif len(lst) == 2:
+            print("Loading frequency exclusion with 2 values:", lst)
+            return cls(low=lst[0], high=lst[1], t_min=0.0, t_max=10.0, enabled=True) # for backward compatibility with old configs that don't have t_min and t_max
+        else:
+            raise ValueError("Expected 2 or 4 values in the list")
 
 
 @dataclass

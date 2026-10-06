@@ -468,7 +468,7 @@ class ShotModel:
 
     # --- Aggregated delays ---
 
-    def compute_aggregated_delays(self):
+    def compute_aggregated_delays(self, timestamp):
         """Build aggregated delay arrays for HFS and LFS, applying exclusions."""
         for agg_data, side, gd_at_zero in [
             (self.aggregated_hfs, 'HFS', self.hfs_gd_at_zero_fp),
@@ -500,9 +500,10 @@ class ShotModel:
             for excl in self.frequency_exclusions[side]:
                 if not excl.enabled:
                     continue
-                mask = (all_f_probe >= excl.low) & (all_f_probe <= excl.high) & (all_f_probe != 0)
-                all_f_probe = all_f_probe[~mask]
-                all_beat_time = all_beat_time[~mask]
+                if (excl.t_min <= timestamp <= excl.t_max):
+                    mask = (all_f_probe >= excl.low) & (all_f_probe <= excl.high) & (all_f_probe != 0)
+                    all_f_probe = all_f_probe[~mask]
+                    all_beat_time = all_beat_time[~mask]
 
             agg_data.f_probe = all_f_probe
             agg_data.beat_time = all_beat_time
@@ -634,6 +635,7 @@ class ShotModel:
 
     def load_config(self, path):
         """Deserialize params/filters/exclusions from JSON."""
+        print("before load:", self.frequency_exclusions)
         with open(path, 'r') as f:
             data = json.load(f)
 
@@ -690,3 +692,5 @@ class ShotModel:
         self.custom_density_cutoff = custom_density_cutoff.get('custom_density_cutoff', self.custom_density_cutoff)
         self.custom_density_cutoff_value = custom_density_cutoff.get('custom_density_cutoff_value', self.custom_density_cutoff_value)
         self.custom_density_cutoff_multiplier = custom_density_cutoff.get('custom_density_cutoff_multiplier', self.custom_density_cutoff_multiplier)
+
+        print("after load:", self.frequency_exclusions)
