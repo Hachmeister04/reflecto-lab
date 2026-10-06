@@ -3,6 +3,12 @@ import getpass
 # Detector configurations
 BANDS = ('K', 'Ka', 'Q', 'V')
 SIDES = ('HFS', 'LFS')
+# Frequency range of the reflectometer
+# This is used in setting the limits of the frequencies in the frequency exclusion parameters. 
+# They should be slightly smaller and larger, respectively, than the actual frequency range of the reflectometer.
+# This allows the user to easly remove the first point of the frequency range, WITHOUT REMOVING THE INITIALIZATION POINT.
+FP_MIN = 16e9 
+FP_MAX = 76e9
 
 # Window
 WINDOW_SIZE = (1600, 800)
@@ -28,8 +34,12 @@ DEFAULT_LINEARIZATION_SWEEP = int(2 / 35e-6)
 DEFAULT_FILTER_LOW = 0  # Hz
 DEFAULT_FILTER_HIGH = 10 * 1e6  # Hz
 
-# Exclusion regions
-EXCLUSION_REGIONS_MAX_N = 50
+# Frequency exclusions (1D probing-frequency intervals dropped from the profile).
+# Capped at 50 for shotfile compatibility.
+FREQUENCY_EXCLUSIONS_MAX_N = 50
+
+# Spectrogram masks (2D boxes blanked before peak-finding).
+SPECTROGRAM_MASKS_MAX_N = 10
 
 # Reconstruct Params
 DEFAULT_START_TIME = 0  # s
@@ -55,6 +65,10 @@ HFS_COLOR = 'r'
 HFS_EXCLUSION_COLOR = (250, 160, 160)
 LFS_COLOR = 'b'
 LFS_EXCLUSION_COLOR = (137, 207, 240)
+
+# Cutoffs
+DEFAULT_CUSTOM_DENSITY_CUTOFF = 'H-1'
+DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER = 1.0
 
 # Folders
 if getpass.getuser().lower()=='vamar':

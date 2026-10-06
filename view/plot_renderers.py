@@ -40,8 +40,8 @@ class PlotRenderer:
         self._spec_filt_low = None     # low filter line
         self._spec_filt_high = None    # high filter line
         self._spec_beatf = None        # beat-frequency curve
-        self._spec_excl = []           # pool of exclusion-mask curves
-        self._spec_regions = []        # pool of QGraphicsRectItem for shaded regions
+        self._spec_excl = []           # pool of frequency-exclusion overlay curves
+        self._spec_mask_rects = []     # pool of QGraphicsRectItem for shaded spectrogram masks
 
     @staticmethod
     def draw_sweep(plot_widget, x_data, data, signal_type):
@@ -150,8 +150,8 @@ class PlotRenderer:
         self._spec_filt_low.setData(f_probe, y_dis + filter_low)
         self._spec_filt_high.setData(f_probe, y_dis + filter_high)
 
-    def draw_beatf_on_spectrogram(self, plot_widget, f_probe, y_beatf, exclusion_filters, side):
-        """Draw beat frequency curve + exclusion overlays on spectrogram."""
+    def draw_beatf_on_spectrogram(self, plot_widget, f_probe, y_beatf, frequency_exclusions, side, timestamp):
+        """Draw beat frequency curve + frequency-exclusion overlays on spectrogram."""
         if self._spec_beatf is None:
             self._spec_beatf = plot_widget.plot(pen=pg.mkPen(color='r', width=2))
             self._spec_excl = [
@@ -161,8 +161,8 @@ class PlotRenderer:
         self._spec_beatf.setData(f_probe, y_beatf)
 
         for i, curve in enumerate(self._spec_excl):
-            if i < len(exclusion_filters) and exclusion_filters[i].enabled:
-                excl = exclusion_filters[i]
+            if i < len(frequency_exclusions) and frequency_exclusions[i].enabled:
+                excl = frequency_exclusions[i]
                 mask = (f_probe > excl.low) & (f_probe < excl.high)
                 mask[1:]  |= mask[:-1] #Roll to paint white the line conecting the last negleted point to the first painted point
                 mask[:-1] |= mask[1:] #Roll to paint white the line conecting last negleted point to the first painted point
@@ -170,41 +170,41 @@ class PlotRenderer:
             else:
                 curve.setData([], [])
 
-    def draw_exclusion_regions(self, plot_widget, regions, timestamp, f_probe, f_beat):
-        """Shade the 2D exclusion regions that are active for the current sweep.
+    def draw_spectrogram_masks(self, plot_widget, masks, timestamp, f_probe, f_beat):
+        """Shade the 2D spectrogram masks that are active for the current sweep.
 
-        Only regions that are enabled and whose time gate [t_min, t_max] contains
+        Only masks that are enabled and whose time gate [t_min, t_max] contains
         the current sweep ``timestamp`` are drawn (matching what compute_beatf
-        actually masks). Rectangles are pooled and reused via setRect()/setVisible()
+        actually blanks). Rectangles are pooled and reused via setRect()/setVisible()
         so repeated redraws don't churn the scene graph.
         """
         x_lo, x_hi = f_probe.min(), f_probe.max()
         y_lo, y_hi = f_beat.min(), f_beat.max()
 
-        # Build the list of visible boxes for currently-active regions.
+        # Build the list of visible boxes for currently-active masks.
         boxes = []
-        for reg in regions:
-            if not reg.enabled or not (reg.t_min <= timestamp <= reg.t_max):
+        for mask in masks:
+            if not mask.enabled or not (mask.t_min <= timestamp <= mask.t_max):
                 continue
             # Clamp to the visible spectrogram extents.
-            x0 = max(reg.f_prob_min, x_lo)
-            x1 = min(reg.f_prob_max, x_hi)
-            y0 = max(reg.f_beat_min, y_lo)
-            y1 = min(reg.f_beat_max, y_hi)
+            x0 = max(mask.f_prob_min, x_lo)
+            x1 = min(mask.f_prob_max, x_hi)
+            y0 = max(mask.f_beat_min, y_lo)
+            y1 = min(mask.f_beat_max, y_hi)
             if x1 <= x0 or y1 <= y0:
                 continue
             boxes.append((x0, y0, x1 - x0, y1 - y0))
 
         # Grow the persistent rect pool to cover the active boxes.
-        while len(self._spec_regions) < len(boxes):
+        while len(self._spec_mask_rects) < len(boxes):
             rect = QtWidgets.QGraphicsRectItem()
             rect.setBrush(pg.mkBrush(128, 128, 128, 128))   # neutral gray, alpha 0.5
             rect.setPen(pg.mkPen('w', width=1, style=QtCore.Qt.DashLine))
             plot_widget.addItem(rect)
-            self._spec_regions.append(rect)
+            self._spec_mask_rects.append(rect)
 
         # Position the needed rects, hide the rest.
-        for i, rect in enumerate(self._spec_regions):
+        for i, rect in enumerate(self._spec_mask_rects):
             if i < len(boxes):
                 x, y, w, h = boxes[i]
                 rect.setRect(x, y, w, h)
@@ -212,8 +212,8 @@ class PlotRenderer:
             else:
                 rect.setVisible(False)
 
-    def draw_group_delays(self, plot_widget, beat_frequencies, exclusion_filters,
-                          aggregated_hfs, aggregated_lfs):
+    def draw_group_delays(self, plot_widget, beat_frequencies, frequency_exclusions,
+                          aggregated_hfs, aggregated_lfs, timestamp):
         """Draw the group delay plot with all beat frequencies.
 
         Uses persistent PlotDataItem curves updated via setData() to avoid
@@ -242,9 +242,9 @@ class PlotRenderer:
         self._gd_agg_hfs.setData(aggregated_hfs.f_probe, aggregated_hfs.beat_time)
         self._gd_agg_lfs.setData(aggregated_lfs.f_probe, aggregated_lfs.beat_time)
 
-        # Update per-band lines and exclusion overlays
+        # Update per-band lines and frequency-exclusion overlays
         for side in SIDES:
-            excls = exclusion_filters[side]
+            excls = frequency_exclusions[side]
             for band in BANDS:
                 bf = beat_frequencies[side][band]
                 self._gd_band[(side, band)].setData(bf.f_probe, bf.y_beat_time)
@@ -253,12 +253,15 @@ class PlotRenderer:
                     curve = self._gd_excl[(side, band, i)]
                     if i < len(excls) and excls[i].enabled:
                         excl = excls[i]
-                        mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
-                        curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
+                        if (excl.t_min <= timestamp) and (timestamp <= excl.t_max):
+                            mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
+                            curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
+                        else:
+                            curve.setData([], [])
                     else:
                         curve.setData([], [])
 
-    def draw_profile(self, plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode):
+    def draw_profile(self, plot_widget, r_HFS, ne_HFS, r_LFS, ne_LFS, coordinate_mode, ne_max=None):
         """Draw density profile.
 
         Uses persistent PlotDataItem curves updated via setData().
@@ -268,10 +271,23 @@ class PlotRenderer:
             self._prof_lfs = plot_widget.plot(pen=pg.mkPen(color=LFS_COLOR, width=2))
             plot_widget.setLabel('left', 'density', units='1e19 m^-3')
             self._prof_ready = True
+            
+            self._prof_hfs_over = plot_widget.plot(pen=pg.mkPen(color=HFS_COLOR, width=2, style=QtCore.Qt.DashLine))
+            self._prof_lfs_over = plot_widget.plot(pen=pg.mkPen(color=LFS_COLOR, width=2, style=QtCore.Qt.DashLine))
 
-        self._prof_hfs.setData(r_HFS, ne_HFS * 1e-19)
-        self._prof_lfs.setData(r_LFS, ne_LFS * 1e-19)
-
+        if ne_max is not None:
+            _mask_lfs = ne_LFS > ne_max
+            _mask_hfs = ne_HFS > ne_max
+            self._prof_hfs_over.setData(r_HFS[_mask_hfs], ne_HFS[_mask_hfs] * 1e-19)
+            self._prof_lfs_over.setData(r_LFS[_mask_lfs], ne_LFS[_mask_lfs] * 1e-19)
+            self._prof_hfs.setData(r_HFS[~_mask_hfs], ne_HFS[~_mask_hfs] * 1e-19)
+            self._prof_lfs.setData(r_LFS[~_mask_lfs], ne_LFS[~_mask_lfs] * 1e-19)
+        else:
+            self._prof_hfs.setData(r_HFS, ne_HFS * 1e-19)
+            self._prof_lfs.setData(r_LFS, ne_LFS * 1e-19)
+            self._prof_hfs_over.setData([], [])
+            self._prof_lfs_over.setData([], [])
+            
         x_label = 'radius'
         x_units = 'm' if coordinate_mode == 'R (m)' else ''
         plot_widget.setLabel('bottom', x_label, units=x_units)

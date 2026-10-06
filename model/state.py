@@ -6,7 +6,7 @@ from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH, DEFAULT_BURST_SIZE,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP,
-    DEFAULT_DENSITY_CUTOFF,
+    DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
 )
 
 
@@ -58,26 +58,45 @@ class FilterRange:
 
 
 @dataclass
-class ExclusionRange:
+class FrequencyExclusion:
+    """A 1D probing-frequency interval dropped from the merged profile curve.
+
+    Applied per side, after peak-finding: points whose probing frequency falls in
+    [low, high] are removed in compute_aggregated_delays and interpolated over.
+    Contrast with SpectrogramMask, which blanks spectrogram pixels beforehand.
+    """
     low: float = 0.0
     high: float = 0.0
+    t_min: float = 0.0
+    t_max: float = 10.0
     enabled: bool = True
 
     def to_config_list(self):
-        return [self.low, self.high]
+        return [self.low, self.high, self.t_min, self.t_max]
 
     @classmethod
     def from_config_list(cls, lst):
         # Loaded exclusions are always enabled.
-        return cls(low=lst[0], high=lst[1], enabled=True)
+        if len(lst) == 4:
+            print("Loading frequency exclusion with 4 values:", lst)
+            return cls(low=lst[0], high=lst[1], t_min=lst[2], t_max=lst[3], enabled=True)
+        elif len(lst) == 2:
+            print("Loading frequency exclusion with 2 values:", lst)
+            return cls(low=lst[0], high=lst[1], t_min=0.0, t_max=10.0, enabled=True) # for backward compatibility with old configs that don't have t_min and t_max
+        else:
+            raise ValueError("Expected 2 or 4 values in the list")
 
 
 @dataclass
-class ExclusionRegion:
-    """A 2D region of the beat-frequency spectrogram to ignore during peak-finding.
+class SpectrogramMask:
+    """A 2D box of the beat-frequency spectrogram blanked before peak-finding.
+
+    Applied per band and side, before the maximum beat frequency is found, so the
+    masked values simply never win the peak fit. Contrast with FrequencyExclusion,
+    which drops whole probing-frequency columns from the final curve afterwards.
 
     The (t_min, t_max) range is shot/discharge time in seconds and gates which
-    sweeps the region applies to. (f_prob_min, f_prob_max) is the probing-frequency
+    sweeps the mask applies to. (f_prob_min, f_prob_max) is the probing-frequency
     extent (spectrogram x-axis) and (f_beat_min, f_beat_max) the beat-frequency
     extent (spectrogram y-axis).
     """
@@ -175,15 +194,18 @@ class ReconstructionInput:
     file_path: str = ''
     spect_params: dict = field(default_factory=dict)
     filters: dict = field(default_factory=dict)
-    exclusion_filters: dict = field(default_factory=dict)
-    exclusion_regions: dict = field(default_factory=dict)
+    frequency_exclusions: dict = field(default_factory=dict)
+    spectrogram_masks: dict = field(default_factory=dict)
     burst_size: int = DEFAULT_BURST_SIZE
     background_burst_size: int = DEFAULT_BURST_SIZE
     start_time: float = DEFAULT_START_TIME
     end_time: float = DEFAULT_END_TIME
     time_step: float = DEFAULT_TIMESTEP
-    apply_density_cutoff: bool = False
-    density_cutoff: float = DEFAULT_DENSITY_CUTOFF
+    density_cutoff_times: Optional[np.ndarray] = None
+    density_cutoff_values: Optional[np.ndarray] = None
+    custom_density_cutoff: bool = False #TODO: remove this variable
+    density_cutoff_value: float = DEFAULT_DENSITY_CUTOFF #TODO: remove this variable
+    density_cutoff_multiplier: float = DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
     write_private_shotfile: bool = False
     write_public_shotfile: bool = False
     write_hdf5: bool = True
