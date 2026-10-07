@@ -604,10 +604,11 @@ class AppController(QObject):
                     child.child('tmax').value(),
                     child.child('Enabled').value()
                 ))
-            # Trigger updates
-            self._draw_spectrogram()
-            self._draw_group_delays()
-            self._draw_profile()
+                # Trigger updates. Skipped while syncing panels (side switch, config load):
+                # the UI is only partly filled then, and the callers redraw afterwards.
+                self._draw_spectrogram()
+                self._draw_group_delays()
+                self._draw_profile()
 
     def _on_remove_frequency_exclusion(self):
         """Remove a frequency exclusion range."""
@@ -672,18 +673,22 @@ class AppController(QObject):
 
         value = p.fft.child('Allow time dependant frequency exclusions').value()
 
-        if value is True:
-            for i, excl in enumerate(m.frequency_exclusions[d.side]):
-                excl.t_min = 0.0
-                excl.t_max = 10.0
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(value=0.0, visible=True)
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(value=10.0, visible=True)
-        else:
-            for i, excl in enumerate(m.frequency_exclusions[d.side]):
-                excl.t_min = 0.0
-                excl.t_max = 10.0
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(value=0.0, visible=False)
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(value=10.0, visible=False)
+        # Turning off resets the time window of every exclusion, on BOTH sides (the UI
+        # only lists the current side, but hidden windows on the other side would still
+        # be applied). Turning on only shows the fields: the windows are already 0-10 s
+        # from when it was off, or were loaded from a config, so they are kept.
+        if value is False:
+            for side in SIDES:
+                for excl in m.frequency_exclusions[side]:
+                    excl.t_min = 0.0
+                    excl.t_max = 10.0
+
+        for i, excl in enumerate(m.frequency_exclusions[d.side]):
+            child = p.fft.child('Exclude frequencies').children()[i]
+            child.child('tmin').setValue(excl.t_min, blockSignal=self._on_frequency_exclusion_changed)
+            child.child('tmax').setValue(excl.t_max, blockSignal=self._on_frequency_exclusion_changed)
+            child.child('tmin').setOpts(visible=value)
+            child.child('tmax').setOpts(visible=value)
 
 
         self._draw_spectrogram()
