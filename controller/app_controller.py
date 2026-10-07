@@ -581,7 +581,7 @@ class AppController(QObject):
                 'name': f'{pos + 1}', 'type': 'group', 'children': [
                     {'name': 'Enabled', 'type': 'bool', 'value': True},
                     {'name': 'from', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
-                    {'name': 'to', 'type': 'float', 'value': FP_MAX, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
+                    {'name': 'to', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
                     {'name': 'tmin', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
                     {'name': 'tmax', 'type': 'float', 'value': 10.0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
                     {'name': 'Remove', 'type': 'action'},
@@ -598,6 +598,7 @@ class AppController(QObject):
 
             if not self._suppress_model_sync:
                 m.frequency_exclusions[d.side].append(FrequencyExclusion(0.0, 0.0, True))
+            self._on_frequency_exclusion_changed()  # Update model with new exclusion values
 
     def _on_remove_frequency_exclusion(self):
         """Remove a frequency exclusion range."""
