@@ -597,8 +597,17 @@ class AppController(QObject):
             child.child('Remove').sigActivated.connect(self._on_remove_frequency_exclusion)
 
             if not self._suppress_model_sync:
-                m.frequency_exclusions[d.side].append(FrequencyExclusion(0.0, 0.0, True))
-            self._on_frequency_exclusion_changed()  # Update model with new exclusion values
+                m.frequency_exclusions[d.side].append(FrequencyExclusion(
+                    child.child('from').value(),
+                    child.child('to').value(),
+                    child.child('tmin').value(),
+                    child.child('tmax').value(),
+                    child.child('Enabled').value()
+                ))
+            # Trigger updates
+            self._draw_spectrogram()
+            self._draw_group_delays()
+            self._draw_profile()
 
     def _on_remove_frequency_exclusion(self):
         """Remove a frequency exclusion range."""
@@ -667,14 +676,14 @@ class AppController(QObject):
             for i, excl in enumerate(m.frequency_exclusions[d.side]):
                 excl.t_min = 0.0
                 excl.t_max = 10.0
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(visible=True)
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(visible=True)
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(value=0.0, visible=True)
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(value=10.0, visible=True)
         else:
             for i, excl in enumerate(m.frequency_exclusions[d.side]):
                 excl.t_min = 0.0
                 excl.t_max = 10.0
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(visible=False)
-                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(visible=False)
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmin').setOpts(value=0.0, visible=False)
+                self.panels.fft.child('Exclude frequencies').children()[i].child('tmax').setOpts(value=10.0, visible=False)
 
 
         self._draw_spectrogram()
