@@ -516,40 +516,46 @@ class ShotModel:
         Returns:
             tuple: (r_HFS, ne_HFS, r_LFS, ne_LFS)
         """
+        # If frequency exclusions leave fewer than 2 points (e.g. only the zero-frequency
+        # initialization point), no profile can be inverted: return empty arrays for that side.
+
         # HFS
-        gd_hfs_x = np.linspace(
-            self.aggregated_hfs.f_probe[0], self.aggregated_hfs.f_probe[-1],
-            PROFILE_INVERSION_RESOLUTION,
-        )
-        gd_hfs_y = np.interp(gd_hfs_x, self.aggregated_hfs.f_probe, self.aggregated_hfs.beat_time)
+        if len(self.aggregated_hfs.f_probe) < 2:
+            r_HFS, ne_HFS = np.array([]), np.array([])
+        else:
+            gd_hfs_x = np.linspace(
+                self.aggregated_hfs.f_probe[0], self.aggregated_hfs.f_probe[-1],
+                PROFILE_INVERSION_RESOLUTION,
+            )
+            gd_hfs_y = np.interp(gd_hfs_x, self.aggregated_hfs.f_probe, self.aggregated_hfs.beat_time)
+            r_HFS = rpspy.profile_inversion(
+                gd_hfs_x,
+                np.clip(gd_hfs_y - gd_hfs_y[0], a_min=-np.inf, a_max=np.inf),
+                pwld_batch=True,
+            )
+            r_HFS = r_HFS + self.inner_limiter
+            ne_HFS = rpspy.f_to_ne(gd_hfs_x)
+            if coordinate_mode == 'rho-poloidal':
+                r_HFS = r_to_rho(timestamp, r_HFS, self.shot, 'HFS')
 
         # LFS
-        gd_lfs_x = np.linspace(
-            self.aggregated_lfs.f_probe[0], self.aggregated_lfs.f_probe[-1],
-            PROFILE_INVERSION_RESOLUTION,
-        )
-        gd_lfs_y = np.interp(gd_lfs_x, self.aggregated_lfs.f_probe, self.aggregated_lfs.beat_time)
-
-        r_HFS = rpspy.profile_inversion(
-            gd_hfs_x,
-            np.clip(gd_hfs_y - gd_hfs_y[0], a_min=-np.inf, a_max=np.inf),
-            pwld_batch=True,
-        )
-        r_LFS = rpspy.profile_inversion(
-            gd_lfs_x,
-            np.clip(gd_lfs_y - gd_lfs_y[0], a_min=-np.inf, a_max=np.inf),
-            pwld_batch=True,
-        )
-
-        r_HFS = r_HFS + self.inner_limiter
-        r_LFS = -r_LFS + self.outer_limiter
-
-        ne_HFS = rpspy.f_to_ne(gd_hfs_x)
-        ne_LFS = rpspy.f_to_ne(gd_lfs_x)
-
-        if coordinate_mode == 'rho-poloidal':
-            r_HFS = r_to_rho(timestamp, r_HFS, self.shot, 'HFS')
-            r_LFS = r_to_rho(timestamp, r_LFS, self.shot, 'LFS')
+        if len(self.aggregated_lfs.f_probe) < 2:
+            r_LFS, ne_LFS = np.array([]), np.array([])
+        else:
+            gd_lfs_x = np.linspace(
+                self.aggregated_lfs.f_probe[0], self.aggregated_lfs.f_probe[-1],
+                PROFILE_INVERSION_RESOLUTION,
+            )
+            gd_lfs_y = np.interp(gd_lfs_x, self.aggregated_lfs.f_probe, self.aggregated_lfs.beat_time)
+            r_LFS = rpspy.profile_inversion(
+                gd_lfs_x,
+                np.clip(gd_lfs_y - gd_lfs_y[0], a_min=-np.inf, a_max=np.inf),
+                pwld_batch=True,
+            )
+            r_LFS = -r_LFS + self.outer_limiter
+            ne_LFS = rpspy.f_to_ne(gd_lfs_x)
+            if coordinate_mode == 'rho-poloidal':
+                r_LFS = r_to_rho(timestamp, r_LFS, self.shot, 'LFS')
 
         return r_HFS, ne_HFS, r_LFS, ne_LFS
 
