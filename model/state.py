@@ -5,6 +5,7 @@ import numpy as np
 from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT,
     DEFAULT_PEAK_METHOD, DEFAULT_RIDGE_MAX_JUMP, DEFAULT_RIDGE_PENALTY,
+    DEFAULT_BACKGROUND_METHOD, DEFAULT_BACKGROUND_WINDOW, DEFAULT_BACKGROUND_SVD_COMPONENTS,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH, DEFAULT_BURST_SIZE,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP,
     DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
@@ -23,6 +24,19 @@ class SpectrogramParams:
     peak_method: str = DEFAULT_PEAK_METHOD
     ridge_max_jump: int = DEFAULT_RIDGE_MAX_JUMP
     ridge_penalty: float = DEFAULT_RIDGE_PENALTY
+    background_method: str = DEFAULT_BACKGROUND_METHOD
+    background_window: int = DEFAULT_BACKGROUND_WINDOW
+    background_svd_components: int = DEFAULT_BACKGROUND_SVD_COMPONENTS
+
+    @property
+    def subtracts_spectrogram_background(self):
+        """Background is subtracted from the power spectrogram (classic method)."""
+        return self.subtract_background and self.background_method == 'spectrogram'
+
+    @property
+    def subtracts_coherent_background(self):
+        """Background is removed from the raw sweeps before the spectrogram."""
+        return self.subtract_background and self.background_method != 'spectrogram'
 
     def to_config_dict(self):
         return {
@@ -33,6 +47,9 @@ class SpectrogramParams:
             'ridge max jump': self.ridge_max_jump,
             'ridge penalty': self.ridge_penalty,
             'subtract background': self.subtract_background,
+            'background method': self.background_method,
+            'background window': self.background_window,
+            'background svd components': self.background_svd_components,
             'subtract dispersion': self.subtract_dispersion,
             'background sweep': self.background_sweep,
             'background burst size (odd)': self.background_burst_size
@@ -51,6 +68,9 @@ class SpectrogramParams:
             peak_method=d.get('peak method', DEFAULT_PEAK_METHOD),
             ridge_max_jump=d.get('ridge max jump', DEFAULT_RIDGE_MAX_JUMP),
             ridge_penalty=d.get('ridge penalty', DEFAULT_RIDGE_PENALTY),
+            background_method=d.get('background method', DEFAULT_BACKGROUND_METHOD),
+            background_window=d.get('background window', DEFAULT_BACKGROUND_WINDOW),
+            background_svd_components=d.get('background svd components', DEFAULT_BACKGROUND_SVD_COMPONENTS),
         )
 
 

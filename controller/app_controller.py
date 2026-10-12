@@ -114,6 +114,9 @@ class AppController(QObject):
         self._h_fft_nfft = lambda: self._on_fft_changed('nfft')
         self._h_fft_burst = lambda: self._on_fft_changed('burst_size')
         self._h_fft_sub_bg = lambda: self._on_fft_changed('subtract_background')
+        self._h_fft_bg_method = lambda: self._on_fft_changed('background_method')
+        self._h_fft_bg_window = lambda: self._on_fft_changed('background_window')
+        self._h_fft_bg_svd = lambda: self._on_fft_changed('background_svd_components')
         self._h_fft_fix_bg = lambda: self._on_fft_changed('fix_background_parameters')
         self._h_fft_bg_sweep = lambda: self._on_fft_changed('background_sweep')
         self._h_fft_bg_burst = lambda: self._on_fft_changed('background_burst_size')
@@ -129,6 +132,9 @@ class AppController(QObject):
         p.fft.child('burst size (odd)').sigValueChanged.connect(self._h_fft_burst)
         p.fft.child('Scale').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Subtract background').sigValueChanged.connect(self._h_fft_sub_bg)
+        p.fft.child('Background method').sigValueChanged.connect(self._h_fft_bg_method)
+        p.fft.child('Background window (sweeps)').sigValueChanged.connect(self._h_fft_bg_window)
+        p.fft.child('SVD components').sigValueChanged.connect(self._h_fft_bg_svd)
         p.fft.child('Fix background sweep and burst size').sigValueChanged.connect(self._h_fft_fix_bg)
         p.fft.child('Background sweep').sigValueChanged.connect(self._h_fft_bg_sweep)
         p.fft.child('Background burst size (odd)').sigValueChanged.connect(self._h_fft_bg_burst)
@@ -196,6 +202,10 @@ class AppController(QObject):
         self._sync_ridge_visibility(sp)
 
         p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._h_fft_sub_bg)
+        p.fft.child('Background method').setValue(sp.background_method, blockSignal=self._h_fft_bg_method)
+        p.fft.child('Background window (sweeps)').setValue(sp.background_window, blockSignal=self._h_fft_bg_window)
+        p.fft.child('SVD components').setValue(sp.background_svd_components, blockSignal=self._h_fft_bg_svd)
+        self._sync_background_method_visibility(sp)
         p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
         p.fft.child('Background burst size (odd)').setValue(sp.background_burst_size, blockSignal=self._h_fft_bg_burst)
         p.fft.child('Subtract dispersion').setValue(
@@ -258,6 +268,11 @@ class AppController(QObject):
         visible = sp.peak_method == 'ridge'
         self.panels.fft.child('Ridge max jump (bins)').setOpts(visible=visible)
         self.panels.fft.child('Ridge penalty').setOpts(visible=visible)
+
+    def _sync_background_method_visibility(self, sp):
+        """Show only the options used by the selected background method."""
+        self.panels.fft.child('Background window (sweeps)').setOpts(visible=sp.background_method in ('coherent_sliding', 'svd'))
+        self.panels.fft.child('SVD components').setOpts(visible=sp.background_method == 'svd')
 
     # --- Shot loading ---
 
@@ -507,6 +522,26 @@ class AppController(QObject):
         elif source == 'subtract_background':
             sp.subtract_background = p.fft.child('Subtract background').value()
 
+        elif source == 'background_method':
+            sp.background_method = p.fft.child('Background method').value()
+            self._sync_background_method_visibility(sp)
+
+        elif source == 'background_window':
+            value = int(p.fft.child('Background window (sweeps)').value())
+            if value % 2 == 0:
+                value += 1
+            sp.background_window = value
+            p.fft.child('Background window (sweeps)').setValue(value, blockSignal=self._h_fft_bg_window)
+            # SVD needs fewer components than sweeps in the window
+            if sp.background_svd_components >= value:
+                sp.background_svd_components = value - 1
+                p.fft.child('SVD components').setValue(sp.background_svd_components, blockSignal=self._h_fft_bg_svd)
+
+        elif source == 'background_svd_components':
+            value = min(int(p.fft.child('SVD components').value()), sp.background_window - 1)
+            sp.background_svd_components = value
+            p.fft.child('SVD components').setValue(value, blockSignal=self._h_fft_bg_svd)
+
         elif source == 'fix_background_parameters':
             value = p.fft.child('Fix background sweep and burst size').value()
             _bg_sweep = int(p.fft.child('Background sweep').value())
@@ -573,7 +608,9 @@ class AppController(QObject):
 
         # Trigger appropriate updates
         if not self._suppress_fft_updates:
-            if source in ('low_filter', 'high_filter', 'subtract_background', 'peak_method', 'ridge_max_jump', 'ridge_penalty'):
+            # Coherent background methods act on the raw sweeps, so they need a full
+            # spectrogram recompute (handled by the final else branch).
+            if source in ('low_filter', 'high_filter', 'peak_method', 'ridge_max_jump', 'ridge_penalty') or (source == 'subtract_background' and sp.background_method == 'spectrogram'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
             elif source in ('burst_size', 'background_burst_size', 'background_sweep', 'fix_background_parameters'):

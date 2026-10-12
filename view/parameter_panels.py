@@ -3,6 +3,7 @@ import getpass
 from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE, DEFAULT_POSTFIX_CONFIG,
     PEAK_METHODS, DEFAULT_PEAK_METHOD, DEFAULT_RIDGE_MAX_JUMP, DEFAULT_RIDGE_PENALTY,
+    BACKGROUND_METHODS, DEFAULT_BACKGROUND_METHOD, DEFAULT_BACKGROUND_WINDOW, DEFAULT_BACKGROUND_SVD_COMPONENTS,
     MAX_BURST_SIZE,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, DECIMALS_TIMES, DEFAULT_DENSITY_CUTOFF,
@@ -55,6 +56,9 @@ class ParameterPanels:
             {'name': 'burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Scale', 'type': 'checklist', 'limits': ['Normalized', 'Linear', 'Logarithmic'], 'exclusive': True, 'delay': 0},
             {'name': 'Subtract background', 'type': 'bool', 'value': False, 'delay': 0},
+            {'name': 'Background method', 'type': 'list', 'limits': BACKGROUND_METHODS, 'value': DEFAULT_BACKGROUND_METHOD, 'delay': 0},
+            {'name': 'Background window (sweeps)', 'type': 'int', 'value': DEFAULT_BACKGROUND_WINDOW, 'limits': (3, None), 'step': 2, 'visible': False, 'delay': 0},
+            {'name': 'SVD components', 'type': 'int', 'value': DEFAULT_BACKGROUND_SVD_COMPONENTS, 'limits': (1, None), 'visible': False, 'delay': 0},
             {'name': 'Fix background sweep and burst size', 'type': 'bool', 'value': True, 'delay': 0},
             {'name': 'Background sweep', 'type': 'float', 'value': 0, 'decimals': DECIMALS_SWEEP_NUM, 'delay': 0},
             {'name': 'Background burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},

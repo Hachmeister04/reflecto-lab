@@ -39,6 +39,9 @@ class ReconstructionWorker(QObject):
                         'peak_method': sp.peak_method,
                         'ridge_max_jump': sp.ridge_max_jump,
                         'ridge_penalty': sp.ridge_penalty,
+                        'background_method': sp.background_method,
+                        'background_window': sp.background_window,
+                        'background_svd_components': sp.background_svd_components,
                     }
 
             subtract_background_on_bands = []

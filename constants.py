@@ -33,6 +33,17 @@ DEFAULT_PEAK_METHOD = 'max'
 DEFAULT_RIDGE_MAX_JUMP = 8  # beat-frequency bins between neighbouring probing-frequency columns
 DEFAULT_RIDGE_PENALTY = 0.1  # log-power cost per squared bin of jump
 
+# Background removal (see rpspy.background)
+BACKGROUND_METHODS = {
+    'Spectrogram (reference)': 'spectrogram',
+    'Coherent (reference)': 'coherent_reference',
+    'Coherent (sliding mean)': 'coherent_sliding',
+    'SVD (low rank)': 'svd',
+}
+DEFAULT_BACKGROUND_METHOD = 'spectrogram'
+DEFAULT_BACKGROUND_WINDOW = 301  # sweeps, for 'coherent_sliding' and 'svd'
+DEFAULT_BACKGROUND_SVD_COMPONENTS = 1
+
 # Linearization Params
 DEFAULT_LINEARIZATION_SWEEP = int(2 / 35e-6)
 
