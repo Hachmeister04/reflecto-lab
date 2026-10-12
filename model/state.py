@@ -4,6 +4,7 @@ import numpy as np
 
 from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT,
+    DEFAULT_BACKGROUND_METHOD, DEFAULT_BACKGROUND_WINDOW, DEFAULT_BACKGROUND_SVD_COMPONENTS,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH, DEFAULT_BURST_SIZE,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP,
     DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
@@ -19,6 +20,19 @@ class SpectrogramParams:
     subtract_dispersion: Optional[bool] = None
     background_sweep: int = 0
     background_burst_size: int = DEFAULT_BURST_SIZE
+    background_method: str = DEFAULT_BACKGROUND_METHOD
+    background_window: int = DEFAULT_BACKGROUND_WINDOW
+    background_svd_components: int = DEFAULT_BACKGROUND_SVD_COMPONENTS
+
+    @property
+    def subtracts_spectrogram_background(self):
+        """Background is subtracted from the power spectrogram (classic method)."""
+        return self.subtract_background and self.background_method == 'spectrogram'
+
+    @property
+    def subtracts_coherent_background(self):
+        """Background is removed from the raw sweeps before the spectrogram."""
+        return self.subtract_background and self.background_method != 'spectrogram'
 
     def to_config_dict(self):
         return {
@@ -26,6 +40,9 @@ class SpectrogramParams:
             'noverlap': self.noverlap,
             'nfft': self.nfft,
             'subtract background': self.subtract_background,
+            'background method': self.background_method,
+            'background window': self.background_window,
+            'background svd components': self.background_svd_components,
             'subtract dispersion': self.subtract_dispersion,
             'background sweep': self.background_sweep,
             'background burst size (odd)': self.background_burst_size
@@ -40,7 +57,10 @@ class SpectrogramParams:
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
             background_sweep=d.get('background sweep', 0),
-            background_burst_size=d.get('background burst size (odd)', None)
+            background_burst_size=d.get('background burst size (odd)', None),
+            background_method=d.get('background method', DEFAULT_BACKGROUND_METHOD),
+            background_window=d.get('background window', DEFAULT_BACKGROUND_WINDOW),
+            background_svd_components=d.get('background svd components', DEFAULT_BACKGROUND_SVD_COMPONENTS),
         )
 
 

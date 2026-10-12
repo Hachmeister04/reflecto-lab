@@ -27,6 +27,17 @@ MIN_NPERSEG = 10
 MAX_NFFT = np.inf
 DEFAULT_BURST_SIZE = 1
 
+# Background removal (see rpspy.background)
+BACKGROUND_METHODS = {
+    'Spectrogram (reference)': 'spectrogram',
+    'Coherent (reference)': 'coherent_reference',
+    'Coherent (sliding mean)': 'coherent_sliding',
+    'SVD (low rank)': 'svd',
+}
+DEFAULT_BACKGROUND_METHOD = 'spectrogram'
+DEFAULT_BACKGROUND_WINDOW = 301  # sweeps, for 'coherent_sliding' and 'svd'
+DEFAULT_BACKGROUND_SVD_COMPONENTS = 1
+
 # Linearization Params
 DEFAULT_LINEARIZATION_SWEEP = int(2 / 35e-6)
 

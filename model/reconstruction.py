@@ -36,6 +36,9 @@ class ReconstructionWorker(QObject):
                         'nperseg': sp.nperseg,
                         'noverlap': sp.noverlap,
                         'nfft': sp.nfft,
+                        'background_method': sp.background_method,
+                        'background_window': sp.background_window,
+                        'background_svd_components': sp.background_svd_components,
                     }
 
             subtract_background_on_bands = []

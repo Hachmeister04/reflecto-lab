@@ -250,28 +250,44 @@ class ShotModel:
 
     # --- Spectrogram computation ---
 
-    def compute_spectrogram(self, band, side, nperseg, noverlap, nfft, sweep, burst_size, subtract_dispersion):
+    def compute_spectrogram(self, band, side, nperseg, noverlap, nfft, sweep, burst_size, subtract_dispersion, coherent_background=None):
         """Calculate spectrogram for a given band and side.
+
+        Args:
+            coherent_background: SpectrogramParams whose background_method is removed
+                from the raw sweeps before the spectrogram, or None for no removal.
 
         Returns:
             tuple: (f, fs, f_beat, t, f_probe, Sxx)
         """
         signal_type = 'complex' if band == 'V' else 'real'
+        offset = (2**11 + 1j * 2**11) if band == 'V' else 2**11
 
         burst = rpspy.get_band_signal(
             self.shot, self.file_path, band, side, signal_type, sweep - burst_size // 2, burst_size
         )
 
-        f = cached_get_auto_linearization_from_shares(self.shot, band, sweep)
+        f_table = cached_get_auto_linearization_from_shares(self.shot, band, sweep)
 
-        f, linearized_burst = rpspy.linearize(f, burst)
+        f, linearized_burst = rpspy.linearize(f_table, burst)
 
         fs = self.sampling_frequency
 
-        if band == 'V':
-            linearized_burst -= (2**11 + 1j * 2**11)
-        else:
-            linearized_burst -= 2**11
+        linearized_burst -= offset
+
+        if coherent_background is not None:
+            # Other sweeps are linearized with this sweep's table, like the burst itself
+            def load_range(start, count):
+                raw = rpspy.get_band_signal(self.shot, self.file_path, band, side, signal_type, start, count)
+                return rpspy.linearize(f_table, raw, new_x=f)[1] - offset
+
+            bg = coherent_background
+            linearized_burst = rpspy.remove_background(
+                linearized_burst, np.arange(sweep - burst_size // 2, sweep - burst_size // 2 + burst_size),
+                bg.background_method, load_range, len(self.time_stamps),
+                reference_sweep=bg.background_sweep, reference_burst_size=bg.background_burst_size,
+                window=bg.background_window, n_components=bg.background_svd_components,
+            )
 
         if subtract_dispersion is True:
             df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
@@ -310,7 +326,8 @@ class ShotModel:
         sp = self.spect_params[d.side][d.band]
         f, fs, f_beat, t, f_probe, Sxx = self.compute_spectrogram(
             d.band, d.side, sp.nperseg, sp.noverlap, sp.nfft,
-            d.sweep, d.burst_size, sp.subtract_dispersion
+            d.sweep, d.burst_size, sp.subtract_dispersion,
+            coherent_background=sp if sp.subtracts_coherent_background else None,
         )
         self.current_fft = CurrentFFTData(
             f=f, fs=fs, f_beat=f_beat, t=t, f_probe=f_probe, unfiltered_Sxx=Sxx,
@@ -382,9 +399,10 @@ class ShotModel:
         f, fs, f_beat, t, f_probe, Sxx = self.compute_spectrogram(
             band, side, sp.nperseg, sp.noverlap, sp.nfft,
             d.sweep, d.burst_size, sp.subtract_dispersion,
+            coherent_background=sp if sp.subtracts_coherent_background else None,
         )
 
-        if sp.subtract_background:
+        if sp.subtracts_spectrogram_background:
             Sxx = self.background_subtract(Sxx, band, side)
 
         y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
@@ -567,8 +585,8 @@ class ShotModel:
         fft = self.current_fft
         sp = self.spect_params[d.side][d.band]
 
-        # Apply background subtraction
-        if sp.subtract_background:
+        # Apply background subtraction (coherent methods were already applied in compute_spectrogram)
+        if sp.subtracts_spectrogram_background:
             Sxx = self.background_subtract(np.array(fft.unfiltered_Sxx), d.band, d.side)
         else:
             Sxx = np.array(fft.unfiltered_Sxx)
