@@ -2,6 +2,7 @@ from pyqtgraph.parametertree import Parameter
 import getpass
 from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE, DEFAULT_POSTFIX_CONFIG,
+    PEAK_METHODS, DEFAULT_PEAK_METHOD, DEFAULT_RIDGE_MAX_JUMP, DEFAULT_RIDGE_PENALTY,
     MAX_BURST_SIZE,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, DECIMALS_TIMES, DEFAULT_DENSITY_CUTOFF,
@@ -59,6 +60,9 @@ class ParameterPanels:
             {'name': 'Background burst size (odd)', 'type': 'float', 'value': DEFAULT_BURST_SIZE, 'limits': (1, MAX_BURST_SIZE), 'step': 2, 'delay': 0},
             {'name': 'Subtract dispersion', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Color Map', 'type': 'cmaplut', 'value': 'plasma'},
+            {'name': 'Peak finding', 'type': 'list', 'limits': PEAK_METHODS, 'value': DEFAULT_PEAK_METHOD, 'delay': 0},
+            {'name': 'Ridge max jump (bins)', 'type': 'int', 'value': DEFAULT_RIDGE_MAX_JUMP, 'limits': (1, 127), 'visible': False, 'delay': 0},
+            {'name': 'Ridge penalty', 'type': 'float', 'value': DEFAULT_RIDGE_PENALTY, 'limits': (0, None), 'step': 0.05, 'decimals': 6, 'visible': False, 'delay': 0},
             {'name': 'Filters', 'title': 'Filters (above dispersion)', 'type': 'group', 'children': [
                 {'name': 'Low Filter', 'type': 'float', 'value': DEFAULT_FILTER_LOW, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},
                 {'name': 'High Filter', 'type': 'float', 'value': DEFAULT_FILTER_HIGH, 'suffix': 'Hz', 'siPrefix': True, 'delay': 0},

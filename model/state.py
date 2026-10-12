@@ -4,6 +4,7 @@ import numpy as np
 
 from constants import (
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT,
+    DEFAULT_PEAK_METHOD, DEFAULT_RIDGE_MAX_JUMP, DEFAULT_RIDGE_PENALTY,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH, DEFAULT_BURST_SIZE,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP,
     DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
@@ -19,12 +20,18 @@ class SpectrogramParams:
     subtract_dispersion: Optional[bool] = None
     background_sweep: int = 0
     background_burst_size: int = DEFAULT_BURST_SIZE
+    peak_method: str = DEFAULT_PEAK_METHOD
+    ridge_max_jump: int = DEFAULT_RIDGE_MAX_JUMP
+    ridge_penalty: float = DEFAULT_RIDGE_PENALTY
 
     def to_config_dict(self):
         return {
             'nperseg': self.nperseg,
             'noverlap': self.noverlap,
             'nfft': self.nfft,
+            'peak method': self.peak_method,
+            'ridge max jump': self.ridge_max_jump,
+            'ridge penalty': self.ridge_penalty,
             'subtract background': self.subtract_background,
             'subtract dispersion': self.subtract_dispersion,
             'background sweep': self.background_sweep,
@@ -40,7 +47,10 @@ class SpectrogramParams:
             subtract_background=d['subtract background'],
             subtract_dispersion=d['subtract dispersion'],
             background_sweep=d.get('background sweep', 0),
-            background_burst_size=d.get('background burst size (odd)', None)
+            background_burst_size=d.get('background burst size (odd)', None),
+            peak_method=d.get('peak method', DEFAULT_PEAK_METHOD),
+            ridge_max_jump=d.get('ridge max jump', DEFAULT_RIDGE_MAX_JUMP),
+            ridge_penalty=d.get('ridge penalty', DEFAULT_RIDGE_PENALTY),
         )
 
 

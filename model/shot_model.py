@@ -351,7 +351,11 @@ class ShotModel:
             if cols.any() and rows.any():
                 Sxx[np.ix_(rows, cols)] = sxx_min
 
-        y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)
+        sp = self.spect_params[side][band]
+        if sp.peak_method == 'ridge':
+            y_max, _ = rpspy.ridge_peak_interpolation(Sxx, max_jump=sp.ridge_max_jump, penalty=sp.ridge_penalty)
+        else:
+            y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)
         y_max *= abs(f_beat[1] - f_beat[0])
 
         # For two-sided (fftshifted) spectrograms, f_beat[0] = -fs/2; shift index→frequency.

@@ -120,6 +120,9 @@ class AppController(QObject):
         self._h_fft_sub_disp = lambda: self._on_fft_changed('subtract_dispersion')
         self._h_fft_low = lambda: self._on_fft_changed('low_filter')
         self._h_fft_high = lambda: self._on_fft_changed('high_filter')
+        self._h_fft_peak_method = lambda: self._on_fft_changed('peak_method')
+        self._h_fft_ridge_jump = lambda: self._on_fft_changed('ridge_max_jump')
+        self._h_fft_ridge_penalty = lambda: self._on_fft_changed('ridge_penalty')
         p.fft.child('nperseg').sigValueChanged.connect(self._h_fft_nperseg)
         p.fft.child('noverlap').sigValueChanged.connect(self._h_fft_noverlap)
         p.fft.child('nfft').sigValueChanged.connect(self._h_fft_nfft)
@@ -133,6 +136,9 @@ class AppController(QObject):
         p.fft.child('Color Map').sigValueChanged.connect(self._on_scale_or_colormap_changed)
         p.fft.child('Filters').child('Low Filter').sigValueChanged.connect(self._h_fft_low)
         p.fft.child('Filters').child('High Filter').sigValueChanged.connect(self._h_fft_high)
+        p.fft.child('Peak finding').sigValueChanged.connect(self._h_fft_peak_method)
+        p.fft.child('Ridge max jump (bins)').sigValueChanged.connect(self._h_fft_ridge_jump)
+        p.fft.child('Ridge penalty').sigValueChanged.connect(self._h_fft_ridge_penalty)
         p.fft.child('Exclude frequencies').sigAddNew.connect(self._on_add_frequency_exclusion)
         p.fft.child('Allow time dependant frequency exclusions').sigValueChanged.connect(self._on_allow_time_dependant_frequency_exclusions_changed)
         p.fft.child('Spectrogram masks').sigAddNew.connect(self._on_add_spectrogram_mask)
@@ -183,6 +189,11 @@ class AppController(QObject):
         p.fft.child('nfft').setLimits((sp.nperseg, np.inf))
         p.fft.child('nfft').sigValueChanged.connect(self._h_fft_nfft)
         p.fft.child('nfft').setValue(sp.nfft, blockSignal=self._h_fft_nfft)
+
+        p.fft.child('Peak finding').setValue(sp.peak_method, blockSignal=self._h_fft_peak_method)
+        p.fft.child('Ridge max jump (bins)').setValue(sp.ridge_max_jump, blockSignal=self._h_fft_ridge_jump)
+        p.fft.child('Ridge penalty').setValue(sp.ridge_penalty, blockSignal=self._h_fft_ridge_penalty)
+        self._sync_ridge_visibility(sp)
 
         p.fft.child('Subtract background').setValue(sp.subtract_background, blockSignal=self._h_fft_sub_bg)
         p.fft.child('Background sweep').setValue(sp.background_sweep, blockSignal=self._h_fft_bg_sweep)
@@ -241,6 +252,12 @@ class AppController(QObject):
         p.reconstruct.child('Start Time').setValue(m.reconstruction_start_time, blockSignal=self._h_recon_start)
         p.reconstruct.child('End Time').setValue(m.reconstruction_end_time, blockSignal=self._h_recon_end)
         p.reconstruct.child('Time Step').setValue(m.reconstruction_time_step, blockSignal=self._h_recon_step)
+
+    def _sync_ridge_visibility(self, sp):
+        """Show the ridge-tracking options only when ridge tracking is selected."""
+        visible = sp.peak_method == 'ridge'
+        self.panels.fft.child('Ridge max jump (bins)').setOpts(visible=visible)
+        self.panels.fft.child('Ridge penalty').setOpts(visible=visible)
 
     # --- Shot loading ---
 
@@ -532,6 +549,16 @@ class AppController(QObject):
         elif source == 'subtract_dispersion':
             sp.subtract_dispersion = p.fft.child('Subtract dispersion').value()
 
+        elif source == 'peak_method':
+            sp.peak_method = p.fft.child('Peak finding').value()
+            self._sync_ridge_visibility(sp)
+
+        elif source == 'ridge_max_jump':
+            sp.ridge_max_jump = int(p.fft.child('Ridge max jump (bins)').value())
+
+        elif source == 'ridge_penalty':
+            sp.ridge_penalty = float(p.fft.child('Ridge penalty').value())
+
         elif source == 'low_filter':
             filt.low = p.fft.child('Filters').child('Low Filter').value()
             if fft.f_beat is not None and filt.low + abs(fft.f_beat[1] - fft.f_beat[0]) >= filt.high:
@@ -546,7 +573,7 @@ class AppController(QObject):
 
         # Trigger appropriate updates
         if not self._suppress_fft_updates:
-            if source in ('low_filter', 'high_filter', 'subtract_background'):
+            if source in ('low_filter', 'high_filter', 'subtract_background', 'peak_method', 'ridge_max_jump', 'ridge_penalty'):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
             elif source in ('burst_size', 'background_burst_size', 'background_sweep', 'fix_background_parameters'):

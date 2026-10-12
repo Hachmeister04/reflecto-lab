@@ -36,6 +36,9 @@ class ReconstructionWorker(QObject):
                         'nperseg': sp.nperseg,
                         'noverlap': sp.noverlap,
                         'nfft': sp.nfft,
+                        'peak_method': sp.peak_method,
+                        'ridge_max_jump': sp.ridge_max_jump,
+                        'ridge_penalty': sp.ridge_penalty,
                     }
 
             subtract_background_on_bands = []

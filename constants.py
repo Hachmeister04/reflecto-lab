@@ -27,6 +27,12 @@ MIN_NPERSEG = 10
 MAX_NFFT = np.inf
 DEFAULT_BURST_SIZE = 1
 
+# Beat-frequency peak finding (see rpspy.ridge_peak_interpolation)
+PEAK_METHODS = {'Max per column': 'max', 'Ridge tracking': 'ridge'}
+DEFAULT_PEAK_METHOD = 'max'
+DEFAULT_RIDGE_MAX_JUMP = 8  # beat-frequency bins between neighbouring probing-frequency columns
+DEFAULT_RIDGE_PENALTY = 0.1  # log-power cost per squared bin of jump
+
 # Linearization Params
 DEFAULT_LINEARIZATION_SWEEP = int(2 / 35e-6)
 
