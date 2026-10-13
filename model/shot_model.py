@@ -6,13 +6,9 @@ from scipy.fft import fftshift
 import scipy.constants as cst
 import rpspy
 
-# Try to load from spectrofast for faster spectrogram computation; fall back to scipy if not available
-try:
-    from spectrofast import spectrogram as fast_spectrogram
-    def spectrogram(args, **kwargs):
-        return fast_spectrogram(args, **kwargs, planner="estimate", use_wisdom=False)
-except ImportError:
-    from scipy.signal import spectrogram
+# spectrofast (FFTW) when available, scipy otherwise. rpspy's version serializes the
+# FFTW calls with a lock shared with rpspy itself: spectrofast is not thread-safe.
+from rpspy._spectrogram import spectrogram
 
 from constants import (
     BANDS, SIDES,
