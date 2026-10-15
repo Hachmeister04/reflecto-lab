@@ -80,6 +80,8 @@ class ParameterPanels:
             {'name': 'Density Cutoff Value', 'type': 'float', 'value': DEFAULT_DENSITY_CUTOFF, 'delay': 0},
             {'name': 'Density Cutoff Multiplier', 'type': 'float', 'value': DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER, 'delay': 0},
             {'name': 'Density Cutoff File', 'type': 'file', 'value': None, 'fileMode': 'AnyFile', 'acceptMode': 'AcceptOpen', 'nameFilter': 'Numpy Files (*.npy)', 'visible': False, 'delay': 0},
+            {'name': 'Current sweep in reconstruction', 'type': 'str', 'value': '', 'readonly': True},
+            {'name': 'Snap to reconstruction grid', 'type': 'bool', 'value': False, 'delay': 0},
             {'name': 'Reconstruct Shot', 'type': 'action'},
             {'name': 'Reconstruction Output', 'title': 'Reconstruction Output', 'type': 'group', 'children': [
                 {'name': 'Private Shotfile', 'type': 'bool', 'value': False, 'delay': 0},
