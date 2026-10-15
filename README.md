@@ -12,6 +12,8 @@ A reconstruction only computes the instants of its own time grid (Start Time, En
 `Current sweep in reconstruction` says whether the sweep being shown is one of them. At any other sweep the preview is
 what the reconstruction would compute if it had an instant there.
 
+Tick `Snap to reconstruction grid` to make the sweep slider, the sweep number and the timestamp move only through those instants.
+
 Loading a shot reads the linearization tables and the Q-HFS signal of the whole shot once, which can take a few seconds.
 
 ## Tests

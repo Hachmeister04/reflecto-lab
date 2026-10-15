@@ -484,6 +484,34 @@ class ShotModel:
         )
         return central_sweeps
 
+    def snap_to_reconstruction_grid(self, sweep, previous):
+        """Sweep of the reconstruction grid to show when the user moves to `sweep`.
+
+        A small move (less than the spacing of the grid) goes to the next grid sweep in the
+        direction of the move, so that scrolling one sweep at a time steps through the grid
+        instead of sticking to the sweep it started from. A larger move goes to the nearest
+        grid sweep.
+
+        Args:
+            sweep: Sweep the user asked for.
+            previous: Sweep that was shown before.
+        """
+        grid = np.asarray(self.reconstruction_sweeps())
+        if sweep in grid:
+            return int(sweep)
+
+        spacing = np.max(np.diff(grid)) if len(grid) > 1 else np.inf
+        if 0 < abs(sweep - previous) < spacing:
+            if sweep > previous:
+                above = grid[grid > sweep]
+                if len(above):
+                    return int(above[0])
+            else:
+                below = grid[grid < sweep]
+                if len(below):
+                    return int(below[-1])
+        return int(grid[np.argmin(np.abs(grid - sweep))])
+
     # --- Config serialization ---
 
     def save_config(self, path):

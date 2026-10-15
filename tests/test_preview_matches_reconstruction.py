@@ -226,5 +226,29 @@ class PreviewMatchesReconstruction(unittest.TestCase):
         self.assertTrue(set(grid) <= set(range(len(m.time_stamps))))
 
 
+    def test_snapping_to_the_reconstruction_grid(self):
+        m, _ = self.scenario_default()
+        grid = m.reconstruction_sweeps()
+        step = int(grid[1] - grid[0])
+        on, off = int(grid[3]), int(grid[3]) + 1
+
+        # Already on the grid: stays
+        self.assertEqual(m.snap_to_reconstruction_grid(on, previous=on - 1), on)
+        # One sweep at a time: steps through the grid in the direction of the move, never sticks
+        self.assertEqual(m.snap_to_reconstruction_grid(on + 1, previous=on), on + step)
+        self.assertEqual(m.snap_to_reconstruction_grid(on - 1, previous=on), on - step)
+        shown = on
+        for _ in range(3):
+            shown = m.snap_to_reconstruction_grid(shown + 1, previous=shown)
+        self.assertEqual(shown, on + 3 * step)
+        # A jump goes to the nearest grid sweep, and so does turning snapping on in place
+        self.assertEqual(m.snap_to_reconstruction_grid(on + 3 * step + 2, previous=on), on + 3 * step)
+        self.assertEqual(m.snap_to_reconstruction_grid(off, previous=off), on)
+        self.assertEqual(m.snap_to_reconstruction_grid(on + step - 1, previous=on + step - 1), on + step)
+        # Beyond the ends: the first and last grid sweep
+        self.assertEqual(m.snap_to_reconstruction_grid(int(grid[-1]) + 1, previous=int(grid[-1])), int(grid[-1]))
+        self.assertEqual(m.snap_to_reconstruction_grid(int(grid[0]) - 1, previous=int(grid[0])), int(grid[0]))
+
+
 if __name__ == '__main__':
     unittest.main()

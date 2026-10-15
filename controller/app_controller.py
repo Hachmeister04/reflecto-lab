@@ -22,7 +22,7 @@ from view.reconstruction_window import ReconstructionWindow
 from view.parameter_panels import ParameterPanels
 from view.plot_renderers import PlotRenderer
 from utils.helpers import round_to_nearest
-from utils.ui_helpers import show_warning
+from utils.ui_helpers import show_warning, loading_indicator
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +148,7 @@ class AppController(QObject):
         p.reconstruct.child('End Time').sigValueChanged.connect(self._h_recon_end)
         p.reconstruct.child('Time Step').sigValueChanged.connect(self._h_recon_step)
         p.reconstruct.child('Reconstruct Shot').sigActivated.connect(self._on_request_reconstruct)
+        p.reconstruct.child('Snap to reconstruction grid').sigValueChanged.connect(self._on_snap_changed)
         p.reconstruct.child('Apply Custom Density Cutoff').sigValueChanged.connect(self._on_cutoff_changed)
         p.reconstruct.child('Density Cutoff File').sigValueChanged.connect(self._on_cutoff_changed)
         p.reconstruct.child('Density Cutoff Value').sigValueChanged.connect(self._on_cutoff_changed)
@@ -245,7 +246,12 @@ class AppController(QObject):
     # --- Shot loading ---
 
     def _on_shot_changed(self, source):
-        """Handles shot/file load."""
+        """Handles shot/file load, telling the user that it is in progress."""
+        with loading_indicator(self.view, "Opening shot...") as loading:
+            self._load_shot(source, loading)
+
+    def _load_shot(self, source, loading):
+        """Load the shot and show it. `loading` is the busy message to keep up to date."""
         p = self.panels
         m = self.model
 
@@ -255,6 +261,7 @@ class AppController(QObject):
                 m.load_shot_from_path(file_path)
                 p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
             except (ValueError, FileNotFoundError):
+                loading.hide()
                 show_warning()
                 return
             finally:
@@ -266,6 +273,7 @@ class AppController(QObject):
                 m.load_shot_from_number(shot)
                 p.file.child('Open').setValue(m.file_path, blockSignal=self._h_shot_open)
             except FileNotFoundError:
+                loading.hide()
                 show_warning()
                 p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
                 return
@@ -282,10 +290,14 @@ class AppController(QObject):
         d = m.detector
 
         # Post-load init
+        loading.setLabelText("Reading the whole shot and computing backgrounds...")
+        QApplication.processEvents()
         m.post_load_init()
         m.initialize_limiters(d.side, p.sweep.child('Timestamp').value(), define_init_funcs=True)
 
         # Full recompute + draw
+        loading.setLabelText("Computing spectrograms and profiles...")
+        QApplication.processEvents()
         self._recompute_and_draw_all()
         self._on_cutoff_changed() #this is just to read the density values, it redraws the profile at the end of the function anyway
         # Set parameter limits
@@ -366,37 +378,48 @@ class AppController(QObject):
         Syncs the three sweep widgets (slider, number, timestamp) immediately so
         the UI tracks the input, then debounces the expensive recompute so that
         dragging the slider doesn't queue one full pipeline per integer step.
+
+        With "Snap to reconstruction grid" on, the sweep moves to the grid of the reconstruction.
         """
         p = self.panels
         m = self.model
         ts = m.time_stamps
+        previous = m.detector.sweep
 
         if source == 'slider':
-            value = p.sweep.child('Sweep').value()
-            m.detector.sweep = value
-            timestamp = ts[value]
-            p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
-            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
-
+            sweep = int(p.sweep.child('Sweep').value())
         elif source == 'number':
-            value = int(p.sweep.child('Sweep nº').value())
-            m.detector.sweep = value
-            timestamp = ts[value]
-            p.sweep.child('Sweep nº').setValue(value, blockSignal=self._h_sweep_number)
-            p.sweep.child('Sweep').setValue(value, blockSignal=self._h_sweep_slider)
-            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
-
+            sweep = int(p.sweep.child('Sweep nº').value())
         elif source == 'timestamp':
-            value = p.sweep.child('Timestamp').value()
-            timestamp = round_to_nearest(value, ts)
-            index = np.where(ts == timestamp)
-            m.detector.sweep = index[0][0]
-            p.sweep.child('Timestamp').setValue(timestamp, blockSignal=self._h_sweep_timestamp)
-            p.sweep.child('Sweep').setValue(index[0][0], blockSignal=self._h_sweep_slider)
-            p.sweep.child('Sweep nº').setValue(index[0][0], blockSignal=self._h_sweep_number)
+            timestamp = round_to_nearest(p.sweep.child('Timestamp').value(), ts)
+            sweep = int(np.where(ts == timestamp)[0][0])
+
+        if p.reconstruct.child('Snap to reconstruction grid').value():
+            sweep = self._snap_sweep(sweep, previous)
+
+        m.detector.sweep = sweep
+        p.sweep.child('Sweep').setValue(sweep, blockSignal=self._h_sweep_slider)
+        p.sweep.child('Sweep nº').setValue(sweep, blockSignal=self._h_sweep_number)
+        p.sweep.child('Timestamp').setValue(ts[sweep], blockSignal=self._h_sweep_timestamp)
 
         # Coalesce rapid changes: the heavy pipeline runs once the position settles.
         self._sweep_timer.start(self._SWEEP_DEBOUNCE_MS)
+
+    def _snap_sweep(self, sweep, previous):
+        """`sweep` moved onto the reconstruction grid, within the limits of the sweep slider."""
+        try:
+            snapped = self.model.snap_to_reconstruction_grid(sweep, previous)
+        except Exception:
+            return sweep  # invalid time range: nothing to snap to
+        low, high = self.panels.sweep.child('Sweep').opts.get('limits', (snapped, snapped))
+        return int(np.clip(snapped, low, high))
+
+    def _on_snap_changed(self):
+        """Turning the snap on moves the sweep being shown onto the grid right away."""
+        if self.model.time_stamps is None or not self.model.shot:
+            return
+        if self.panels.reconstruct.child('Snap to reconstruction grid').value():
+            self._on_sweep_changed('number')
 
     def _do_sweep_recompute(self):
         """Run the expensive sweep pipeline for the current detector.sweep.
