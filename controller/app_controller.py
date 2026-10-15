@@ -397,13 +397,36 @@ class AppController(QObject):
         if p.reconstruct.child('Snap to reconstruction grid').value():
             sweep = self._snap_sweep(sweep, previous)
 
-        m.detector.sweep = sweep
-        p.sweep.child('Sweep').setValue(sweep, blockSignal=self._h_sweep_slider)
-        p.sweep.child('Sweep nº').setValue(sweep, blockSignal=self._h_sweep_number)
-        p.sweep.child('Timestamp').setValue(ts[sweep], blockSignal=self._h_sweep_timestamp)
+        self._set_sweep(sweep)
 
         # Coalesce rapid changes: the heavy pipeline runs once the position settles.
         self._sweep_timer.start(self._SWEEP_DEBOUNCE_MS)
+
+    def _set_sweep(self, sweep):
+        """Make `sweep` the sweep being shown in the model and in the three sweep widgets."""
+        p = self.panels
+        self.model.detector.sweep = sweep
+        p.sweep.child('Sweep').setValue(sweep, blockSignal=self._h_sweep_slider)
+        p.sweep.child('Sweep nº').setValue(sweep, blockSignal=self._h_sweep_number)
+        p.sweep.child('Timestamp').setValue(self.model.time_stamps[sweep], blockSignal=self._h_sweep_timestamp)
+
+    def _snap_to_new_grid(self):
+        """The reconstruction grid changed: with snapping on, move the sweep onto the new grid.
+
+        Returns True if the sweep moved, in which case the sweep pipeline is scheduled.
+        """
+        m = self.model
+        if m.time_stamps is None or not m.shot:
+            return False
+        if not self.panels.reconstruct.child('Snap to reconstruction grid').value():
+            return False
+
+        sweep = self._snap_sweep(m.detector.sweep, m.detector.sweep)
+        if sweep == m.detector.sweep:
+            return False
+        self._set_sweep(sweep)
+        self._sweep_timer.start(self._SWEEP_DEBOUNCE_MS)
+        return True
 
     def _snap_sweep(self, sweep, previous):
         """`sweep` moved onto the reconstruction grid, within the limits of the sweep slider."""
@@ -508,6 +531,9 @@ class AppController(QObject):
             
             #update big step of slider to be the new burst size
             list(p.sweep.child('Sweep').items)[0].slider.setPageStep(value)
+
+            # The grid depends on the burst size: the sweep that is shown must be on the new one
+            self._snap_to_new_grid()
 
         elif source == 'subtract_background':
             sp.subtract_background = p.fft.child('Subtract background').value()
@@ -858,6 +884,7 @@ class AppController(QObject):
         m.reconstruction_start_time = p.reconstruct.child('Start Time').value()
         m.reconstruction_end_time = p.reconstruct.child('End Time').value()
         m.reconstruction_time_step = p.reconstruct.child('Time Step').value()
+        self._snap_to_new_grid()
         self._update_reconstruction_grid_status()
 
     def _update_reconstruction_grid_status(self):

@@ -249,6 +249,23 @@ class PreviewMatchesReconstruction(unittest.TestCase):
         self.assertEqual(m.snap_to_reconstruction_grid(int(grid[-1]) + 1, previous=int(grid[-1])), int(grid[-1]))
         self.assertEqual(m.snap_to_reconstruction_grid(int(grid[0]) - 1, previous=int(grid[0])), int(grid[0]))
 
+    def test_sweep_lands_on_the_new_grid_when_the_reconstruction_parameters_change(self):
+        m, _ = self.scenario_default()
+        shown = int(m.reconstruction_sweeps()[3])
+        for change in ({'reconstruction_time_step': 0.0007}, {'reconstruction_start_time': 0.0051},
+                       {'reconstruction_end_time': 0.0095}, {'burst': 3}):
+            with self.subTest(change=change):
+                for name, value in change.items():
+                    if name == 'burst':
+                        m.detector.burst_size = value
+                    else:
+                        setattr(m, name, value)
+                grid = m.reconstruction_sweeps()
+                # Same call the controller makes: the shown sweep is its own previous sweep
+                shown = m.snap_to_reconstruction_grid(shown, previous=shown)
+                self.assertIn(shown, grid)
+                self.assertEqual(shown, int(grid[np.argmin(np.abs(grid - shown))]))
+
 
 if __name__ == '__main__':
     unittest.main()
