@@ -7,8 +7,6 @@ from constants import (
     HFS_COLOR, HFS_EXCLUSION_COLOR, LFS_COLOR, LFS_EXCLUSION_COLOR,
 )
 
-# Max exclusion filters per side (matches UI limit in app_controller)
-_MAX_EXCL = 10
 
 
 class PlotRenderer:
@@ -24,7 +22,7 @@ class PlotRenderer:
         self._gd_agg_hfs = None
         self._gd_agg_lfs = None
         self._gd_band = {}      # (side, band) -> PlotDataItem
-        self._gd_excl = {}      # (side, band, idx) -> PlotDataItem
+        self._gd_excl = {}      # (side, band) -> list of PlotDataItem, one per exclusion
         self._gd_ready = False
 
         # Profile persistent curves (lazy-initialized on first draw)
@@ -154,11 +152,11 @@ class PlotRenderer:
         """Draw beat frequency curve + frequency-exclusion overlays on spectrogram."""
         if self._spec_beatf is None:
             self._spec_beatf = plot_widget.plot(pen=pg.mkPen(color='r', width=2))
-            self._spec_excl = [
-                plot_widget.plot(pen=pg.mkPen(color='w', width=2))
-                for _ in range(_MAX_EXCL)
-            ]
         self._spec_beatf.setData(f_probe, y_beatf)
+        
+        # One overlay curve per exclusion, created as exclusions are added
+        while len(self._spec_excl) < len(frequency_exclusions):
+            self._spec_excl.append(plot_widget.plot(pen=pg.mkPen(color='w', width=2)))
 
         for i, curve in enumerate(self._spec_excl):
             if i < len(frequency_exclusions) and frequency_exclusions[i].enabled:
@@ -229,13 +227,10 @@ class PlotRenderer:
 
             for side in SIDES:
                 color = HFS_COLOR if side == 'HFS' else LFS_COLOR
-                excl_color = HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR
                 for band in BANDS:
                     self._gd_band[(side, band)] = plot_widget.plot(
                         pen=pg.mkPen(color=color, width=2))
-                    for i in range(_MAX_EXCL):
-                        self._gd_excl[(side, band, i)] = plot_widget.plot(
-                            pen=pg.mkPen(color=excl_color, width=2))
+                    self._gd_excl[(side, band)] = []
 
             plot_widget.setLabel('bottom', 'Probing Frequency', units='Hz')
             plot_widget.setLabel('left', 'Time Delay', units='s')
@@ -247,23 +242,26 @@ class PlotRenderer:
 
         # Update per-band lines and frequency-exclusion overlays
         for side in SIDES:
+            excl_color = HFS_EXCLUSION_COLOR if side == 'HFS' else LFS_EXCLUSION_COLOR
             excls = frequency_exclusions[side]
             for band in BANDS:
                 bf = beat_frequencies[side][band]
                 self._gd_band[(side, band)].setData(bf.f_probe, bf.y_beat_time)
 
-                for i in range(_MAX_EXCL):
-                    curve = self._gd_excl[(side, band, i)]
-                    if i < len(excls) and excls[i].enabled:
-                        excl = excls[i]
-                        if (excl.t_min <= timestamp) and (timestamp <= excl.t_max):
-                            mask = (bf.f_probe > excl.low) & (bf.f_probe < excl.high)
-                            mask[1:]  |= mask[:-1] #Roll to paint white the line conecting the last negleted point to the first painted point
-                            mask[:-1] |= mask[1:] #Roll to paint white the line conecting last negleted point to the first painted point
+               # One overlay curve per exclusion, created on demand
+                curves = self._gd_excl[(side, band)]
+                while len(curves) < len(excls):
+                    curve = plot_widget.plot(pen=pg.mkPen(color=excl_color, width=2))
+                    curve.setZValue(1)  # above the band lines, whenever it was created
+                    curves.append(curve)
 
-                            curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
-                        else:
-                            curve.setData([], [])
+                for i, curve in enumerate(curves):
+                    excl = excls[i] if i < len(excls) else None
+                    if excl is not None and excl.enabled and excl.t_min <= timestamp <= excl.t_max:
+                        mask = (bf.f_probe > excl.low) & (bf.f_probe < excl.high)
+                        mask[1:]  |= mask[:-1] #Roll to paint white the line conecting the last negleted point to the first painted point
+                        mask[:-1] |= mask[1:] #Roll to paint white the line conecting last negleted point to the first painted point
+                        curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
                     else:
                         curve.setData([], [])
 
