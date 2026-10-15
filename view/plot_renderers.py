@@ -164,7 +164,9 @@ class PlotRenderer:
             if i < len(frequency_exclusions) and frequency_exclusions[i].enabled:
                 excl = frequency_exclusions[i]
                 if (excl.t_min <= timestamp <= excl.t_max):
-                    mask = (f_probe >= excl.low) & (f_probe <= excl.high)
+                    mask = (f_probe > excl.low) & (f_probe < excl.high)
+                    mask[1:]  |= mask[:-1] #Roll to paint white the line conecting the last negleted point to the first painted point
+                    mask[:-1] |= mask[1:] #Roll to paint white the line conecting last negleted point to the first painted point
                     curve.setData(f_probe[mask], y_beatf[mask])
                 else:
                     curve.setData([], [])
@@ -255,7 +257,10 @@ class PlotRenderer:
                     if i < len(excls) and excls[i].enabled:
                         excl = excls[i]
                         if (excl.t_min <= timestamp) and (timestamp <= excl.t_max):
-                            mask = (bf.f_probe >= excl.low) & (bf.f_probe <= excl.high)
+                            mask = (bf.f_probe > excl.low) & (bf.f_probe < excl.high)
+                            mask[1:]  |= mask[:-1] #Roll to paint white the line conecting the last negleted point to the first painted point
+                            mask[:-1] |= mask[1:] #Roll to paint white the line conecting last negleted point to the first painted point
+
                             curve.setData(bf.f_probe[mask], bf.y_beat_time[mask])
                         else:
                             curve.setData([], [])
