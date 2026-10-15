@@ -2,17 +2,8 @@ import logging
 import json
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-from scipy.fft import fftshift
 import scipy.constants as cst
 import rpspy
-
-# Try to load from spectrofast for faster spectrogram computation; fall back to scipy if not available
-try:
-    from spectrofast import spectrogram as fast_spectrogram
-    def spectrogram(args, **kwargs):
-        return fast_spectrogram(args, **kwargs, planner="estimate", use_wisdom=False)
-except ImportError:
-    from scipy.signal import spectrogram
 
 from constants import (
     BANDS, SIDES,
@@ -78,6 +69,7 @@ class ShotModel:
         self.current_sweep = CurrentSweepData()
         self.current_fft = CurrentFFTData()
         self.current_display = CurrentDisplayData()
+        self.current_band = None  # rpspy.Band of the current detector, see compute_band_burst
 
         # Aggregated delay data
         self.aggregated_hfs = AggregatedDelayData()
@@ -125,6 +117,7 @@ class ShotModel:
         """Run after successful shot load: backgrounds, limiters, timestamps."""
         self.sampling_frequency = rpspy.get_sampling_frequency(self.shot, self.file_path)
         self.time_stamps = rpspy.get_timestamps(self.shot, self.file_path)
+        self.prewarm_shot_wide_data()
         self.compute_all_backgrounds()
         self._init_default_limiters()
 
@@ -200,29 +193,46 @@ class ShotModel:
             return self.inner_limiter
         return self.outer_limiter
 
-    # --- Sweep computation ---
+    # --- Processing ---
+    #
+    # Everything below calls the same rpspy functions that rpspy.full_profile_reconstruction
+    # runs, on the same settings, for a single instant. Do not reimplement a processing step
+    # here: the preview would silently stop matching the reconstruction.
 
-    def prewarm_linearization_cache(self, sweep):
-        """Pre-warm the linearization cache for all 4 bands in parallel.
+    @staticmethod
+    def signal_type(band):
+        return 'complex' if band == 'V' else 'real'
 
-        Each rpspy.get_linearization call takes ~80ms on cache miss.
-        Running 4 bands sequentially = ~320ms; in parallel = ~80ms.
+    def _background_burst_size(self, sp):
+        """Burst size of the background, which defaults to the burst size of the signal."""
+        return sp.background_burst_size if sp.background_burst_size is not None else self.detector.burst_size
+
+    def _current_time(self):
+        """Time of the sweep being looked at, as the single instant rpspy processes."""
+        return np.array([self.time_stamps[self.detector.sweep]])
+
+    def prewarm_shot_wide_data(self):
+        """Read, in parallel, what rpspy needs from the whole shot and caches.
+
+        The probing-frequency axis of each band comes from the linearization tables of the
+        whole shot, and the noise filter of the HFS profile from the whole Q-HFS signal. The
+        first request of each takes a while, which is better spent at load than at the first plot.
         """
         futures = [
-            self._executor.submit(
-                cached_get_auto_linearization_from_shares,
-                self.shot, band, sweep,
-            )
+            self._executor.submit(rpspy.get_common_frequency_axis, self.shot, band)
             for band in BANDS
         ]
+        futures.append(self._executor.submit(rpspy.get_qhfs_signal_deviation, self.shot, self.file_path))
         for f in futures:
             f.result()
+
+    # --- Sweep computation ---
 
     def compute_sweep(self):
         """Compute linearized sweep data for current detector."""
         import time as _time
         d = self.detector
-        signal_type = 'complex' if d.band == 'V' else 'real'
+        signal_type = self.signal_type(d.band)
 
         _t0 = _time.perf_counter()
         data = rpspy.get_band_signal(
@@ -231,10 +241,10 @@ class ShotModel:
         data -= 2**11 if signal_type == 'real' else (2**11 + 1j * 2**11)
         _t1 = _time.perf_counter()
 
-        x_data = cached_get_auto_linearization_from_shares(self.shot, d.band, d.sweep)
+        table = cached_get_auto_linearization_from_shares(self.shot, d.band, d.sweep)
         _t2 = _time.perf_counter()
 
-        x_data, data = rpspy.linearize(x_data, data)
+        x_data, data = rpspy.linearize(table, data, new_x=rpspy.get_common_frequency_axis(self.shot, d.band))
         _t3 = _time.perf_counter()
 
         logger.info(
@@ -250,115 +260,59 @@ class ShotModel:
 
     # --- Spectrogram computation ---
 
-    def compute_spectrogram(self, band, side, nperseg, noverlap, nfft, sweep, burst_size, subtract_dispersion):
-        """Calculate spectrogram for a given band and side.
+    def compute_band_burst(self, band, side, sweep, burst_size, sp):
+        """Burst-averaged spectrogram of a band and side around `sweep`.
 
         Returns:
-            tuple: (f, fs, f_beat, t, f_probe, Sxx)
+            rpspy.Band: with `burst_spectrogram` of shape (1, n_beat, n_probe), the axes
+            `x` (probing frequency) and `y` (beat frequency), `frequency` (linearized sweep axis),
+            `sweep_rate`, `dispersion` and `tau_offset`.
         """
-        signal_type = 'complex' if band == 'V' else 'real'
-
-        burst = rpspy.get_band_signal(
-            self.shot, self.file_path, band, side, signal_type, sweep - burst_size // 2, burst_size
+        all_sweeps, burst_mode = rpspy.burst_windows(sweep, burst_size)
+        return rpspy.band_burst_spectrogram(
+            self.shot, band, side, self.signal_type(band), all_sweeps, burst_mode,
+            subtract_dispersion=bool(sp.subtract_dispersion),
+            nperseg=sp.nperseg, noverlap=sp.noverlap, nfft=sp.nfft,
+            shotfile_dir=self.file_path, shot_linearization=self.shot,
+            linearization_shotfile_dir=self.file_path,
         )
 
-        f = cached_get_auto_linearization_from_shares(self.shot, band, sweep)
+    def compute_group_delay(self, band_data, band, side, spectrogram, copy):
+        """Group delay of one band and side at the current sweep.
 
-        f, linearized_burst = rpspy.linearize(f, burst)
+        Args:
+            band_data: rpspy.Band from compute_band_burst.
+            spectrogram: (1, n_beat, n_probe) spectrogram, already background-subtracted if desired.
+            copy: Leave `spectrogram` untouched.
 
-        fs = self.sampling_frequency
-
-        if band == 'V':
-            linearized_burst -= (2**11 + 1j * 2**11)
-        else:
-            linearized_burst -= 2**11
-
-        if subtract_dispersion is True:
-            df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
-            correction = rpspy.get_dispersion_phase(self.shot, band, side, f[0], df_dt, np.arange(len(f)) / fs)
-            corrected_burst = linearized_burst * correction
-        else:
-            corrected_burst = linearized_burst
-
-        two_sided = np.iscomplexobj(corrected_burst)
-
-        f_beat, t, Sxx = spectrogram(
-            corrected_burst,
-            fs=fs,
-            nperseg=nperseg,
-            noverlap=noverlap,
-            nfft=nfft,
-            return_onesided=not two_sided,
-            detrend=False,
-            window='boxcar',
+        Returns:
+            tuple: (group delay, beat frequency), each of shape (1, n_probe).
+        """
+        filt = self.filters[side][band]
+        masks = [m.to_rpspy() for m in self.spectrogram_masks[side][band] if m.enabled]
+        return rpspy.find_group_delay(
+            spectrogram, band_data, filt.low, filt.high,
+            masks=masks, times=self._current_time(), copy=copy,
         )
 
-        f_probe = np.interp(t, np.arange(len(f)) / fs, f)
-
-        if two_sided:
-            f_beat = fftshift(f_beat)
-            Sxx = fftshift(Sxx, axes=-2)
-
-        # Average across burst
-        Sxx = np.average(Sxx, axis=0)
-
-        return f, fs, f_beat, t, f_probe, Sxx
+    def _spectrogram_for_group_delay(self, band_data, band, side):
+        """The spectrogram the group delay is found on: background-subtracted if enabled."""
+        if self.spect_params[side][band].subtract_background:
+            return rpspy.subtract_background(band_data.burst_spectrogram, self.background_spectrograms[side][band])
+        return band_data.burst_spectrogram
 
     def compute_current_fft(self):
-        """Compute full FFT pipeline for current detector selection."""
+        """Compute the spectrogram for current detector selection."""
         d = self.detector
         sp = self.spect_params[d.side][d.band]
-        f, fs, f_beat, t, f_probe, Sxx = self.compute_spectrogram(
-            d.band, d.side, sp.nperseg, sp.noverlap, sp.nfft,
-            d.sweep, d.burst_size, sp.subtract_dispersion
-        )
+        band_data = self.compute_band_burst(d.band, d.side, d.sweep, d.burst_size, sp)
+        self.current_band = band_data
         self.current_fft = CurrentFFTData(
-            f=f, fs=fs, f_beat=f_beat, t=t, f_probe=f_probe, unfiltered_Sxx=Sxx,
+            f=band_data.frequency, fs=band_data.sampling_frequency, f_beat=band_data.y,
+            f_probe=band_data.x, unfiltered_Sxx=band_data.burst_spectrogram[0],
         )
-
-    # --- Dispersion ---
-
-    def compute_dispersion(self, band, side, f_probe, t, subtract):
-        """Compute dispersion for the selected band and side."""
-        if subtract is True:
-            return np.zeros(len(f_probe))
-        else:
-            k = (f_probe[-1] - f_probe[0]) / (t[-1] - t[0])
-            return k * rpspy.aug_tgcorr2(band, side, f_probe * 1e-9, self.shot)
 
     # --- Beat frequency ---
-
-    def compute_beatf(self, band, side, Sxx, y_dis, f_beat, fs, f_probe):
-        """Compute beat frequency from spectrogram data."""
-        filt = self.filters[side][band]
-
-        Sxx[np.broadcast_to(f_beat[:, None], Sxx.shape) <= y_dis + filt.low] = Sxx.min()
-        Sxx[np.broadcast_to(f_beat[:, None], Sxx.shape) >= y_dis + filt.high] = Sxx.min()
-
-        sxx_min = Sxx.min()
-
-        # FrequencyExclusion is intentionally NOT applied here: blanking a whole
-        # f_beat column makes the quadratic peak fit return NaN. Those points are
-        # dropped from the final curve in compute_aggregated_delays instead.
-
-        # SpectrogramMask (per band/side, 2D box, gated by the current sweep timestamp)
-        ts = self.time_stamps[self.detector.sweep]
-        for mask in self.spectrogram_masks[side][band]:
-            if not mask.enabled or not (mask.t_min <= ts <= mask.t_max):
-                continue
-            cols = (f_probe >= mask.f_prob_min) & (f_probe <= mask.f_prob_max)
-            rows = (f_beat >= mask.f_beat_min) & (f_beat <= mask.f_beat_max)
-            if cols.any() and rows.any():
-                Sxx[np.ix_(rows, cols)] = sxx_min
-
-        y_max, _ = rpspy.column_wise_max_with_quadratic_interpolation(Sxx)
-        y_max *= abs(f_beat[1] - f_beat[0])
-
-        # For two-sided (fftshifted) spectrograms, f_beat[0] = -fs/2; shift index→frequency.
-        if f_beat[0] < 0:
-            y_max += f_beat[0]
-
-        return y_max
 
     def compute_one_beatf(self, band, side):
         """Update beat freq data for one band/side."""
@@ -366,11 +320,9 @@ class ShotModel:
         if side == d.side and band == d.band:
             fft = self.current_fft
             disp = self.current_display
-            df_dt = (fft.f[-1] - fft.f[0]) / ((len(fft.f) - 1) * (1 / fft.fs))
-            y_beat_time = (disp.y_beatf - disp.y_dis) / df_dt
             self.beat_frequencies[side][band] = BeatFrequencyData(
                 f_probe=fft.f_probe, y_beatf=disp.y_beatf,
-                y_beat_time=y_beat_time, df_dt=df_dt,
+                y_beat_time=disp.y_beat_time, df_dt=disp.df_dt,
             )
         else:
             self.beat_frequencies[side][band] = self._compute_one_beatf_result(band, side)
@@ -379,23 +331,13 @@ class ShotModel:
         """Compute beat freq for one non-current band/side. Returns result (thread-safe)."""
         d = self.detector
         sp = self.spect_params[side][band]
-        f, fs, f_beat, t, f_probe, Sxx = self.compute_spectrogram(
-            band, side, sp.nperseg, sp.noverlap, sp.nfft,
-            d.sweep, d.burst_size, sp.subtract_dispersion,
-        )
-
-        if sp.subtract_background:
-            Sxx = self.background_subtract(Sxx, band, side)
-
-        y_dis = self.compute_dispersion(band, side, f_probe, t, sp.subtract_dispersion)
-        y_beatf = self.compute_beatf(band, side, Sxx, y_dis, f_beat, fs, f_probe)
-
-        df_dt = (f[-1] - f[0]) / ((len(f) - 1) * (1 / fs))
-        y_beat_time = (y_beatf - y_dis) / df_dt
+        band_data = self.compute_band_burst(band, side, d.sweep, d.burst_size, sp)
+        spectrogram = self._spectrogram_for_group_delay(band_data, band, side)
+        tau, beat_frequency = self.compute_group_delay(band_data, band, side, spectrogram, copy=False)
 
         return BeatFrequencyData(
-            f_probe=f_probe, y_beatf=y_beatf,
-            y_beat_time=y_beat_time, df_dt=df_dt,
+            f_probe=band_data.x, y_beatf=beat_frequency[0],
+            y_beat_time=tau[0], df_dt=band_data.sweep_rate,
         )
 
     def compute_all_beatf(self):
@@ -405,14 +347,7 @@ class ShotModel:
         d = self.detector
 
         # Current detector — instant, uses cached FFT/display data
-        fft = self.current_fft
-        disp = self.current_display
-        df_dt = (fft.f[-1] - fft.f[0]) / ((len(fft.f) - 1) * (1 / fft.fs))
-        y_beat_time = (disp.y_beatf - disp.y_dis) / df_dt
-        self.beat_frequencies[d.side][d.band] = BeatFrequencyData(
-            f_probe=fft.f_probe, y_beatf=disp.y_beatf,
-            y_beat_time=y_beat_time, df_dt=df_dt,
-        )
+        self.compute_one_beatf(d.band, d.side)
 
         # Remaining 7 detectors — run in parallel
         others = [
@@ -436,21 +371,15 @@ class ShotModel:
     def compute_background(self, band, side):
         """Calculate and store background spectrogram."""
         sp = self.spect_params[side][band]
-        burst_size = sp.background_burst_size
-
-        # Clamp background sweep to valid range so the burst window
-        # [sweep - burst_size//2, sweep + burst_size//2] stays within the data.
-        half = burst_size // 2
-        n_sweeps = len(self.time_stamps)
-        lower = half
-        upper = max(lower, n_sweeps - half - 1)
-        sweep = int(np.clip(sp.background_sweep, lower, upper))
-
-        _, _, _, _, _, Sxx = self.compute_spectrogram(
-            band, side, sp.nperseg, sp.noverlap, sp.nfft,
-            sweep, burst_size, sp.subtract_dispersion,
+        self.background_spectrograms[side][band] = rpspy.background_spectrogram(
+            self.shot, band, side, self.signal_type(band),
+            sp.background_sweep, self._background_burst_size(sp),
+            subtract_dispersion=bool(sp.subtract_dispersion),
+            nperseg=sp.nperseg, noverlap=sp.noverlap, nfft=sp.nfft,
+            shotfile_dir=self.file_path, shot_linearization=self.shot,
+            linearization_shotfile_dir=self.file_path,
+            n_sweeps=len(self.time_stamps),
         )
-        self.background_spectrograms[side][band] = Sxx
 
     def compute_all_backgrounds(self):
         """Calculate backgrounds for all band/side combinations."""
@@ -458,130 +387,102 @@ class ShotModel:
             for band in BANDS:
                 self.compute_background(band, side)
 
-    def background_subtract(self, Sxx, band, side):
-        """Subtract background from spectrogram."""
-        return np.clip(
-            Sxx - self.background_spectrograms[side][band],
-            a_min=np.min(Sxx),
-            a_max=np.inf,
+    # --- Profile ---
+
+    def _limiter(self, side, time):
+        """Initialization position at `time`, as rpspy.full_profile_reconstruction asks for it."""
+        if self.get_init is not None:
+            return self.get_init(side, time)
+        return self.inner_limiter if side == 'HFS' else self.outer_limiter
+
+    def _invert_current(self):
+        """Merge the group delay of the 8 detectors and invert it, as the reconstruction does."""
+        t = self._current_time()
+        bands = {
+            side: [
+                (self.beat_frequencies[side][band].f_probe, self.beat_frequencies[side][band].y_beat_time[None, :])
+                for band in BANDS
+            ] for side in SIDES
+        }
+        exclusions = {
+            side: [e.to_rpspy() for e in self.frequency_exclusions[side] if e.enabled] for side in SIDES
+        }
+        return rpspy.reconstruct_profiles(
+            t, bands['HFS'], bands['LFS'], exclusions,
+            inner_limiter=self._limiter('HFS', t), outer_limiter=self._limiter('LFS', t),
         )
 
-    # --- Aggregated delays ---
-
     def compute_aggregated_delays(self, timestamp):
-        """Build aggregated delay arrays for HFS and LFS, applying exclusions."""
-        for agg_data, side, gd_at_zero in [
-            (self.aggregated_hfs, 'HFS', self.hfs_gd_at_zero_fp),
-            (self.aggregated_lfs, 'LFS', self.lfs_gd_at_zero_fp),
+        """Build aggregated delay arrays for HFS and LFS: the points the profile is built from."""
+        profiles = self._invert_current()
+        for agg_data, fp, gd in [
+            (self.aggregated_hfs, profiles.fp_hfs, profiles.gd_hfs[0]),
+            (self.aggregated_lfs, profiles.fp_lfs, profiles.gd_lfs[0]),
         ]:
-            all_f_probe = np.concatenate((
-                [0],
-                self.beat_frequencies[side]['K'].f_probe,
-                self.beat_frequencies[side]['Ka'].f_probe,
-                self.beat_frequencies[side]['Q'].f_probe,
-                self.beat_frequencies[side]['V'].f_probe,
-            ))
-            all_beat_time = np.concatenate((
-                [gd_at_zero],
-                self.beat_frequencies[side]['K'].y_beat_time,
-                self.beat_frequencies[side]['Ka'].y_beat_time,
-                self.beat_frequencies[side]['Q'].y_beat_time,
-                self.beat_frequencies[side]['V'].y_beat_time,
-            ))
-
-            # Remove NaNs
-            nan_mask = np.isnan(all_beat_time)
-            all_beat_time = all_beat_time[~nan_mask]
-            all_f_probe = all_f_probe[~nan_mask]
-
-            # Apply FrequencyExclusions: drop these f_probe points from the final
-            # curve. SpectrogramMasks are handled upstream by blanking the
-            # spectrogram in compute_beatf, so they are not dropped here.
-            for excl in self.frequency_exclusions[side]:
-                if not excl.enabled:
-                    continue
-                if (excl.t_min <= timestamp <= excl.t_max):
-                    mask = (all_f_probe >= excl.low) & (all_f_probe <= excl.high) & (all_f_probe != 0)
-                    all_f_probe = all_f_probe[~mask]
-                    all_beat_time = all_beat_time[~mask]
-
-            agg_data.f_probe = all_f_probe
-            agg_data.beat_time = all_beat_time
-
-    # --- Profile ---
+            valid = ~np.isnan(gd)
+            agg_data.f_probe = fp[valid]
+            agg_data.beat_time = gd[valid]
 
     def compute_profile(self, coordinate_mode, timestamp):
         """Compute density profile.
 
+        The profile is what the reconstruction produces for this instant, before the density
+        cutoff: the points above the cutoff are returned too so they can be shown differently.
+
         Returns:
             tuple: (r_HFS, ne_HFS, r_LFS, ne_LFS)
         """
-        # If frequency exclusions leave fewer than 2 points (e.g. only the zero-frequency
-        # initialization point), no profile can be inverted: return empty arrays for that side.
+        profiles = self._invert_current()
 
-        # HFS
-        if len(self.aggregated_hfs.f_probe) < 2:
-            r_HFS, ne_HFS = np.array([]), np.array([])
-        else:
-            gd_hfs_x = np.linspace(
-                self.aggregated_hfs.f_probe[0], self.aggregated_hfs.f_probe[-1],
-                PROFILE_INVERSION_RESOLUTION,
-            )
-            gd_hfs_y = np.interp(gd_hfs_x, self.aggregated_hfs.f_probe, self.aggregated_hfs.beat_time)
-            r_HFS = rpspy.profile_inversion(
-                gd_hfs_x,
-                np.clip(gd_hfs_y - gd_hfs_y[0], a_min=-np.inf, a_max=np.inf),
-                pwld_batch=True,
-            )
-            r_HFS = r_HFS + self.inner_limiter
-            ne_HFS = rpspy.f_to_ne(gd_hfs_x)
+        # Same discard of noisy HFS profiles as in the reconstruction
+        rpspy.apply_qhfs_noise_filter(
+            self.shot, self.file_path, profiles.times, profiles.f, profiles.r_hfs, profiles.gds_hfs,
+        )
+
+        out = []
+        for r, side in ((profiles.r_hfs[0], 'HFS'), (profiles.r_lfs[0], 'LFS')):
+            valid = np.isfinite(r)
+            r, ne = r[valid], profiles.ne[valid]
             if coordinate_mode == 'rho-poloidal':
-                r_HFS = r_to_rho(timestamp, r_HFS, self.shot, 'HFS')
+                r = r_to_rho(timestamp, r, self.shot, side)
+            out += [r, ne]
 
-        # LFS
-        if len(self.aggregated_lfs.f_probe) < 2:
-            r_LFS, ne_LFS = np.array([]), np.array([])
-        else:
-            gd_lfs_x = np.linspace(
-                self.aggregated_lfs.f_probe[0], self.aggregated_lfs.f_probe[-1],
-                PROFILE_INVERSION_RESOLUTION,
-            )
-            gd_lfs_y = np.interp(gd_lfs_x, self.aggregated_lfs.f_probe, self.aggregated_lfs.beat_time)
-            r_LFS = rpspy.profile_inversion(
-                gd_lfs_x,
-                np.clip(gd_lfs_y - gd_lfs_y[0], a_min=-np.inf, a_max=np.inf),
-                pwld_batch=True,
-            )
-            r_LFS = -r_LFS + self.outer_limiter
-            ne_LFS = rpspy.f_to_ne(gd_lfs_x)
-            if coordinate_mode == 'rho-poloidal':
-                r_LFS = r_to_rho(timestamp, r_LFS, self.shot, 'LFS')
-
-        return r_HFS, ne_HFS, r_LFS, ne_LFS
+        return tuple(out)
 
     # --- Display data (for current spectrogram view) ---
 
     def compute_current_display(self):
         """Compute dispersion and beat frequency for the current detector view."""
         d = self.detector
-        fft = self.current_fft
+        band_data = self.current_band
         sp = self.spect_params[d.side][d.band]
 
-        # Apply background subtraction
-        if sp.subtract_background:
-            Sxx = self.background_subtract(np.array(fft.unfiltered_Sxx), d.band, d.side)
-        else:
-            Sxx = np.array(fft.unfiltered_Sxx)
-        self.current_fft.Sxx = Sxx
+        spectrogram = self._spectrogram_for_group_delay(band_data, d.band, d.side)
+        tau, beat_frequency = self.compute_group_delay(band_data, d.band, d.side, spectrogram, copy=True)
 
-        y_dis = self.compute_dispersion(d.band, d.side, fft.f_probe, fft.t, sp.subtract_dispersion)
-        y_beatf = self.compute_beatf(d.band, d.side, np.array(Sxx), y_dis, fft.f_beat, fft.fs, fft.f_probe)
+        # What is drawn: where the background is larger than the signal, show the lowest signal
+        # instead, so that a logarithmic scale can be drawn. Not used to find the group delay.
+        shown = spectrogram[0]
+        if sp.subtract_background:
+            shown = np.clip(shown, a_min=np.min(band_data.burst_spectrogram), a_max=np.inf)
+        self.current_fft.Sxx = shown
 
         self.current_display = CurrentDisplayData(
-            y_beatf=y_beatf,
-            y_dis=y_dis,
-            df_dt=(fft.f[-1] - fft.f[0]) / ((len(fft.f) - 1) * (1 / fft.fs)),
+            y_beatf=beat_frequency[0],
+            y_dis=band_data.dispersion,
+            y_beat_time=tau[0],
+            df_dt=band_data.sweep_rate,
         )
+
+    # --- Reconstruction time grid ---
+
+    def reconstruction_sweeps(self):
+        """Sweeps at which a reconstruction with the current settings is computed."""
+        _, central_sweeps, _ = rpspy.burst_mode_handler(
+            self.time_stamps, self.reconstruction_start_time, self.reconstruction_end_time,
+            self.reconstruction_time_step, self.detector.burst_size,
+        )
+        return central_sweeps
 
     # --- Config serialization ---
 

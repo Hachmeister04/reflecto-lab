@@ -308,6 +308,8 @@ class AppController(QObject):
         default_cfg_name = f"{DEFAULT_PREFIX_CONFIG}{self.model.shot}{DEFAULT_POSTFIX_CONFIG}"
         p.config.child('Save').setOpts(selectFile=default_cfg_name)
 
+        self._update_reconstruction_grid_status()
+
     # --- Initialization ---
 
     def _on_init_changed(self, source):
@@ -406,11 +408,6 @@ class AppController(QObject):
         p = self.panels
         m = self.model
 
-        # Pre-warm linearization cache for all 4 bands in parallel.
-        # Each cache miss costs ~80ms; 4 sequential = ~320ms, parallel = ~80ms.
-        m.prewarm_linearization_cache(m.detector.sweep)
-        t1b = time.perf_counter()
-
         m.initialize_limiters(m.detector.side, p.sweep.child('Timestamp').value())
         t2 = time.perf_counter()
 
@@ -431,12 +428,14 @@ class AppController(QObject):
             t7 = time.perf_counter()
 
             logger.info(
-                "SWEEP TIMING: prewarm=%.1fms init=%.1fms sweep=%.1fms fft+display=%.1fms "
+                "SWEEP TIMING: init=%.1fms sweep=%.1fms fft+display=%.1fms "
                 "all_beatf=%.1fms group_delays=%.1fms profile=%.1fms TOTAL=%.1fms",
-                (t1b - t1) * 1000, (t2 - t1b) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
+                (t2 - t1) * 1000, (t3 - t2) * 1000, (t4 - t3) * 1000,
                 (t5 - t4) * 1000, (t6 - t5) * 1000, (t7 - t6) * 1000,
                 (t7 - t1) * 1000,
             )
+
+            self._update_reconstruction_grid_status()
 
     # --- FFT parameters ---
 
@@ -562,6 +561,9 @@ class AppController(QObject):
 
             self._draw_group_delays()
             self._draw_profile()
+
+            if source == 'burst_size':
+                self._update_reconstruction_grid_status()
 
     # --- Frequency exclusions (1D, dropped from the merged profile) ---
 
@@ -833,6 +835,32 @@ class AppController(QObject):
         m.reconstruction_start_time = p.reconstruct.child('Start Time').value()
         m.reconstruction_end_time = p.reconstruct.child('End Time').value()
         m.reconstruction_time_step = p.reconstruct.child('Time Step').value()
+        self._update_reconstruction_grid_status()
+
+    def _update_reconstruction_grid_status(self):
+        """Say whether the sweep being looked at is one of the instants the reconstruction computes.
+
+        A reconstruction only computes the instants of its own time grid. At any other sweep
+        the preview shows what the reconstruction would compute if it had an instant there,
+        which is the same method but not an instant of its output.
+        """
+        m = self.model
+        status = self.panels.reconstruct.child('Current sweep in reconstruction')
+        if m.time_stamps is None or not m.shot:
+            return
+
+        try:
+            grid = m.reconstruction_sweeps()
+        except Exception:
+            status.setValue('invalid time range')
+            return
+
+        sweep = m.detector.sweep
+        if sweep in grid:
+            status.setValue('yes')
+        else:
+            nearest = int(grid[np.argmin(np.abs(grid - sweep))])
+            status.setValue(f'no (nearest: sweep {nearest}, {m.time_stamps[nearest]:.6f} s)')
 
     def _on_cutoff_changed(self):
         """Toggle density cutoff visibility."""
@@ -871,18 +899,18 @@ class AppController(QObject):
             try:
                 print(f"Loading density cutoff from file: {path}")
                 data = np.atleast_2d(np.load(path))
-                self.model.density_cutoff_times = data[:, 0]
-                self.model.density_cutoff_values = data[:, 1]
+                self.density_cutoff_times = data[:, 0]
+                self.density_cutoff_values = data[:, 1]
             except Exception as e:
                 logger.error("Failed to load density cutoff from file: %s", e)
-                self.model.density_cutoff_times = None
-                self.model.density_cutoff_values = None
+                self.density_cutoff_times = None
+                self.density_cutoff_values = None
         elif value == 'None':
             self.panels.reconstruct.child('Density Cutoff Multiplier').setOpts(visible=False)
             self.panels.reconstruct.child('Density Cutoff Value').setOpts(visible=False)
             self.panels.reconstruct.child('Density Cutoff File').setOpts(visible=False)
-            self.model.density_cutoff_times = None
-            self.model.density_cutoff_values = None
+            self.density_cutoff_times = None
+            self.density_cutoff_values = None
         self._draw_profile()
 
     # --- Reconstruction ---
@@ -921,7 +949,6 @@ class AppController(QObject):
             time_step=p.reconstruct.child('Time Step').value(),
             density_cutoff_times=self.density_cutoff_times,
             density_cutoff_values=self.density_cutoff_values,
-            custom_density_cutoff=self.model.custom_density_cutoff,
             write_private_shotfile=p.reconstruct.child('Reconstruction Output').child('Private Shotfile').value(),
             write_public_shotfile=p.reconstruct.child('Reconstruction Output').child('Public Shotfile').value(),
             write_hdf5=write_hdf5,

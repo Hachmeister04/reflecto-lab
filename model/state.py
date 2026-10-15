@@ -52,6 +52,10 @@ class FilterRange:
     def to_config_list(self):
         return [self.low, self.high]
 
+    def to_rpspy(self):
+        """The [low, high] pair rpspy expects."""
+        return [self.low, self.high]
+
     @classmethod
     def from_config_list(cls, lst):
         return cls(low=lst[0], high=lst[1])
@@ -72,6 +76,10 @@ class FrequencyExclusion:
     enabled: bool = True
 
     def to_config_list(self):
+        return [self.low, self.high, self.t_min, self.t_max]
+
+    def to_rpspy(self):
+        """The [low, high, t_min, t_max] list rpspy expects."""
         return [self.low, self.high, self.t_min, self.t_max]
 
     @classmethod
@@ -114,6 +122,14 @@ class SpectrogramMask:
             self.f_prob_min, self.f_prob_max,
             self.f_beat_min, self.f_beat_max,
             self.enabled,
+        ]
+
+    def to_rpspy(self):
+        """The flat box rpspy expects: [t_min, t_max, f_prob_min, f_prob_max, f_beat_min, f_beat_max]."""
+        return [
+            self.t_min, self.t_max,
+            self.f_prob_min, self.f_prob_max,
+            self.f_beat_min, self.f_beat_max,
         ]
 
     @classmethod
@@ -171,6 +187,7 @@ class CurrentFFTData:
 class CurrentDisplayData:
     y_beatf: Optional[np.ndarray] = field(default=None, repr=False)
     y_dis: Optional[np.ndarray] = field(default=None, repr=False)
+    y_beat_time: Optional[np.ndarray] = field(default=None, repr=False)
     df_dt: Optional[float] = None
 
 
