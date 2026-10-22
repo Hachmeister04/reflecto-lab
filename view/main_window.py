@@ -71,7 +71,13 @@ class MainWindowView(QMainWindow):
     def _show_border_axis(plot_widget, name):
         """Show an axis as a bare line (no ticks or values) to close the plot frame."""
         plot_widget.showAxis(name)
-        plot_widget.getAxis(name).setStyle(showValues=False, tickLength=0)
+        axis = plot_widget.getAxis(name)
+        axis.setStyle(showValues=False, tickLength=0)
+        # pyqtgraph draws the axis line 1 px inside the axis; at zero size it gets clipped
+        if name in ('left', 'right'):
+            axis.setWidth(2)
+        else:
+            axis.setHeight(2)
 
     def set_parameter_panels(self, panels):
         """Add parameter groups to the tree."""
