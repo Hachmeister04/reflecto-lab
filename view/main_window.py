@@ -4,6 +4,7 @@ from pyqtgraph.Qt import QtGui
 from pyqtgraph.dockarea import Dock, DockArea
 from pyqtgraph.parametertree import ParameterTree
 
+from view.secondary_axes import CutoffDensityAxis, PlasmaFrequencyAxis
 from constants import WINDOW_SIZE, PARAMETER_TREE_WIDTH_PROPORTION, GRAPH_WIDTH_PROPORTION, DEFAULT_SECTION_SIZE
 
 
@@ -45,10 +46,14 @@ class MainWindowView(QMainWindow):
         self.plot_spect = pg.PlotWidget(title="Spectrogram")
         self.dock_spect.addWidget(self.plot_spect)
 
-        self.plot_beatf = pg.PlotWidget(title="Group Delay")
+        self.plot_beatf = pg.PlotWidget(title="Group Delay", axisItems={'top': CutoffDensityAxis('top')})
+        self.plot_beatf.showAxis('top')
+        self.plot_beatf.setLabel('top', 'O-mode Cutoff Density (1e19 m^-3)')
         self.dock_beatf.addWidget(self.plot_beatf)
 
-        self.plot_profile = pg.PlotWidget(title="Profile")
+        self.plot_profile = pg.PlotWidget(title="Profile", axisItems={'right': PlasmaFrequencyAxis('right')})
+        self.plot_profile.showAxis('right')
+        self.plot_profile.setLabel('right', 'Plasma Frequency (GHz)')
         self.dock_profile.addWidget(self.plot_profile)
 
         # Parameter tree
