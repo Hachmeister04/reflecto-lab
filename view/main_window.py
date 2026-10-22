@@ -49,11 +49,13 @@ class MainWindowView(QMainWindow):
         self.plot_beatf = pg.PlotWidget(title="Group Delay", axisItems={'top': CutoffDensityAxis('top')})
         self.plot_beatf.showAxis('top')
         self.plot_beatf.setLabel('top', 'O-mode Cutoff Density (1e19 m^-3)')
+        self._show_border_axis(self.plot_beatf, 'right')
         self.dock_beatf.addWidget(self.plot_beatf)
 
         self.plot_profile = pg.PlotWidget(title="Profile", axisItems={'right': PlasmaFrequencyAxis('right')})
         self.plot_profile.showAxis('right')
         self.plot_profile.setLabel('right', 'Plasma Frequency (GHz)')
+        self._show_border_axis(self.plot_profile, 'top')
         self.dock_profile.addWidget(self.plot_profile)
 
         # Parameter tree
@@ -64,6 +66,12 @@ class MainWindowView(QMainWindow):
 
         # Color bar (lazily created by renderer)
         self.colorBar = None
+
+    @staticmethod
+    def _show_border_axis(plot_widget, name):
+        """Show an axis as a bare line (no ticks or values) to close the plot frame."""
+        plot_widget.showAxis(name)
+        plot_widget.getAxis(name).setStyle(showValues=False, tickLength=0)
 
     def set_parameter_panels(self, panels):
         """Add parameter groups to the tree."""
