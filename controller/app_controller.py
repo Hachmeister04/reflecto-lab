@@ -10,7 +10,7 @@ from PyQt5.QtCore import QObject, QTimer
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
-    DECIMALS_EXCLUSIONS, FREQUENCY_EXCLUSIONS_MAX_N, SPECTROGRAM_MASKS_MAX_N,
+    DECIMALS_EXCLUSIONS, SPECTROGRAM_MASKS_MAX_N,
     DEFAULT_PREFIX_HDF5, DEFAULT_POSTFIX_HDF5, DEFAULT_FOLDER_HDF5,
     DEFAULT_PREFIX_CONFIG, DEFAULT_POSTFIX_CONFIG, DEFAULT_FOLDER_CONFIG,
     FP_MIN, FP_MAX
@@ -626,40 +626,38 @@ class AppController(QObject):
 
         show_time_range = p.fft.child('Allow time dependant frequency exclusions').value()
 
-        # Don't allow more than N exclusions for shotfile compatibility
-        if pos < FREQUENCY_EXCLUSIONS_MAX_N:
-            p.fft.child('Exclude frequencies').addChild({
-                'name': f'{pos + 1}', 'type': 'group', 'children': [
-                    {'name': 'Enabled', 'type': 'bool', 'value': True},
-                    {'name': 'from', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
-                    {'name': 'to', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
-                    {'name': 'tmin', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
-                    {'name': 'tmax', 'type': 'float', 'value': 10.0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
-                    {'name': 'Remove', 'type': 'action'},
-                ]
-            })
+        p.fft.child('Exclude frequencies').addChild({
+            'name': f'{pos + 1}', 'type': 'group', 'children': [
+                {'name': 'Enabled', 'type': 'bool', 'value': True},
+                {'name': 'from', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
+                {'name': 'to', 'type': 'float', 'value': FP_MIN, 'suffix': 'Hz', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'limits': (FP_MIN, FP_MAX)},
+                {'name': 'tmin', 'type': 'float', 'value': 0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
+                {'name': 'tmax', 'type': 'float', 'value': 10.0, 'suffix': 's', 'siPrefix': True, 'decimals': DECIMALS_EXCLUSIONS, 'visible': show_time_range},
+                {'name': 'Remove', 'type': 'action'},
+            ]
+        })
 
-            child = p.fft.child('Exclude frequencies').child(f'{pos + 1}')
-            child.child('Enabled').sigValueChanged.connect(self._on_frequency_exclusion_changed)
-            child.child('from').sigValueChanged.connect(self._on_frequency_exclusion_changed)
-            child.child('to').sigValueChanged.connect(self._on_frequency_exclusion_changed)
-            child.child('tmin').sigValueChanged.connect(self._on_frequency_exclusion_changed)
-            child.child('tmax').sigValueChanged.connect(self._on_frequency_exclusion_changed)
-            child.child('Remove').sigActivated.connect(self._on_remove_frequency_exclusion)
+        child = p.fft.child('Exclude frequencies').child(f'{pos + 1}')
+        child.child('Enabled').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+        child.child('from').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+        child.child('to').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+        child.child('tmin').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+        child.child('tmax').sigValueChanged.connect(self._on_frequency_exclusion_changed)
+        child.child('Remove').sigActivated.connect(self._on_remove_frequency_exclusion)
 
-            if not self._suppress_model_sync:
-                m.frequency_exclusions[d.side].append(FrequencyExclusion(
-                    child.child('from').value(),
-                    child.child('to').value(),
-                    child.child('tmin').value(),
-                    child.child('tmax').value(),
-                    child.child('Enabled').value()
-                ))
-                # Trigger updates. Skipped while syncing panels (side switch, config load):
-                # the UI is only partly filled then, and the callers redraw afterwards.
-                self._draw_spectrogram()
-                self._draw_group_delays()
-                self._draw_profile()
+        if not self._suppress_model_sync:
+            m.frequency_exclusions[d.side].append(FrequencyExclusion(
+                child.child('from').value(),
+                child.child('to').value(),
+                child.child('tmin').value(),
+                child.child('tmax').value(),
+                child.child('Enabled').value()
+            ))
+            # Trigger updates. Skipped while syncing panels (side switch, config load):
+            # the UI is only partly filled then, and the callers redraw afterwards.
+            self._draw_spectrogram()
+            self._draw_group_delays()
+            self._draw_profile()
 
     def _on_remove_frequency_exclusion(self):
         """Remove a frequency exclusion range."""
