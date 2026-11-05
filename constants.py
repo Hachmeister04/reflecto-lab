@@ -1,8 +1,8 @@
 import numpy as np
 import getpass
-# Detector configurations
-BANDS = ('K', 'Ka', 'Q', 'V')
-SIDES = ('HFS', 'LFS')
+# Detector configurations: the most the diagnostic can have, defined in rpspy.
+# What a given shot has is found when it is loaded, see ShotModel.available_bands.
+from rpspy.bands import BAND_NAMES as BANDS, SIDES
 # Frequency range of the reflectometer
 # This is used in setting the limits of the frequencies in the frequency exclusion parameters. 
 # They should be slightly smaller and larger, respectively, than the actual frequency range of the reflectometer.

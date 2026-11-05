@@ -285,6 +285,9 @@ class AppController(QObject):
         #p.reconstruct.child('Apply Custom Density Cutoff').setOpts(readonly=True)
         #p.reconstruct.child('Apply Custom Density Cutoff').setOpts(visible=False)
 
+        # Offer only the bands that this shot has
+        self._update_detector_choices()
+
         # Sync detector
         self._sync_detector_from_panels()
         d = m.detector
@@ -361,9 +364,39 @@ class AppController(QObject):
 
     # --- Detector ---
 
+    def _update_detector_choices(self):
+        """Offer in the Band and Side lists only what the loaded shot has.
+
+        The bands on offer are those of the selected side (W, for example, is only on the LFS).
+        The current choice is kept if the shot has it, otherwise the first one available is chosen.
+        Does not notify: the caller goes on to read the detector from the panels.
+        """
+        m = self.model
+        side_param = self.panels.detector.child('Side')
+        band_param = self.panels.detector.child('Band')
+
+        sides = m.available_sides
+        side = side_param.value() if side_param.value() in sides else sides[0]
+        bands = m.bands_on_side(side)
+        band = band_param.value() if band_param.value() in bands else bands[0]
+
+        # Changing the limits of a list can change its value, which would run the detector handlers
+        side_param.sigValueChanged.disconnect(self._h_det_side)
+        band_param.sigValueChanged.disconnect(self._h_det_band)
+        try:
+            side_param.setLimits(sides)
+            side_param.setValue(side)
+            band_param.setLimits(bands)
+            band_param.setValue(band)
+        finally:
+            side_param.sigValueChanged.connect(self._h_det_side)
+            band_param.sigValueChanged.connect(self._h_det_band)
+
     def _on_detector_changed(self, source):
         """Band/side change."""
         p = self.panels
+        if source == 'side':
+            self._update_detector_choices()  # The new side may not have the band that was selected
         self._sync_detector_from_panels()
         self._sync_params_to_panels()
 
@@ -598,9 +631,7 @@ class AppController(QObject):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
             elif source in ('burst_size', 'background_burst_size', 'background_sweep', 'fix_background_parameters'):
-                for side in SIDES:
-                    for band in BANDS:
-                        m.compute_background(band, side)
+                m.compute_all_backgrounds()
                 self._recompute_fft_and_display()
                 m.compute_all_beatf()
             else:
@@ -991,6 +1022,7 @@ class AppController(QObject):
             filters=m.filters,
             frequency_exclusions=m.frequency_exclusions,
             spectrogram_masks=m.spectrogram_masks,
+            used_bands=list(m.available_bands),
             burst_size=m.detector.burst_size,
             start_time=p.reconstruct.child('Start Time').value(),
             end_time=p.reconstruct.child('End Time').value(),

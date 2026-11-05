@@ -257,7 +257,9 @@ class PlotRenderer:
 
                 for i, curve in enumerate(curves):
                     excl = excls[i] if i < len(excls) else None
-                    if excl is not None and excl.enabled and excl.t_min <= timestamp <= excl.t_max:
+                    if bf.f_probe is None:  # The shot does not have this band
+                        curve.setData([], [])
+                    elif excl is not None and excl.enabled and excl.t_min <= timestamp <= excl.t_max:
                         mask = (bf.f_probe > excl.low) & (bf.f_probe < excl.high)
                         mask[1:]  |= mask[:-1] #Roll to paint white the line conecting the last negleted point to the first painted point
                         mask[:-1] |= mask[1:] #Roll to paint white the line conecting last negleted point to the first painted point

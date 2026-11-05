@@ -52,6 +52,7 @@ def build_reconstruction_kwargs(params):
         linearization_shotfile_dir=params.file_path,
         sweep_linearization=DEFAULT_LINEARIZATION_SWEEP,
         shot_linearization=params.shot,
+        used_bands=params.used_bands,
         spectrogram_options=spectrogram_options,
         filters=filters,
         frequency_exclusions=frequency_exclusions,
