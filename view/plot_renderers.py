@@ -246,7 +246,10 @@ class PlotRenderer:
             excls = frequency_exclusions[side]
             for band in BANDS:
                 bf = beat_frequencies[side][band]
-                self._gd_band[(side, band)].setData(bf.f_probe, bf.y_beat_time)
+                if bf.f_probe is None:  # The shot does not have this band: draw nothing (setData rejects None)
+                    self._gd_band[(side, band)].setData([], [])
+                else:
+                    self._gd_band[(side, band)].setData(bf.f_probe, bf.y_beat_time)
 
                # One overlay curve per exclusion, created on demand
                 curves = self._gd_excl[(side, band)]
