@@ -215,6 +215,8 @@ class ReconstructionInput:
     spectrogram_masks: dict = field(default_factory=dict)
     # Bands to reconstruct, (name, side, dtype) each. None leaves the choice to rpspy.
     used_bands: Optional[list] = None
+    # The shot whose linearization tables are used. None means the shot itself.
+    linearization_shot: Optional[int] = None
     burst_size: int = DEFAULT_BURST_SIZE
     background_burst_size: int = DEFAULT_BURST_SIZE
     start_time: float = DEFAULT_START_TIME

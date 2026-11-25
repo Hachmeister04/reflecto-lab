@@ -84,8 +84,9 @@ def get_path_from_shot(shot):
 
 
 @lru_cache(maxsize=500)
-def cached_get_auto_linearization_from_shares(shot, band, sweep):
-    return rpspy.get_linearization(shot, sweep, band, use_lookup_table=True)
+def cached_get_auto_linearization_from_shares(linearization_shot, band, sweep):
+    """Frequency table of `band` at `sweep`, from the linearization tables of `linearization_shot`."""
+    return rpspy.get_linearization(linearization_shot, sweep, band, use_lookup_table=True)
 
 
 @lru_cache(maxsize=100)

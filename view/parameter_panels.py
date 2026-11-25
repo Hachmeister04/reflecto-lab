@@ -20,6 +20,9 @@ class ParameterPanels:
         self.file = Parameter.create(name='File', type='group', children=[
             {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'},
             {'name': 'Shot', 'type': 'int'},
+            # The shot whose linearization tables are used. It is the shot itself unless its tables lack entries
+            # for a band and the tables of another shot are used instead.
+            {'name': 'Linearization', 'type': 'int'},
         ])
         self.file.child('Open').setValue('')
 

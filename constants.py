@@ -1,7 +1,7 @@
 import numpy as np
 import getpass
 # Detector configurations: the most the diagnostic can have, defined in rpspy.
-# What a given shot has is found when it is loaded, see ShotModel.available_bands.
+# What a given shot has is found when it is loaded, see ShotModel.used_bands.
 from rpspy.bands import BAND_NAMES as BANDS, SIDES
 # Limits of the frequencies in the frequency exclusion parameters. Defined in rpspy, with the rest of the
 # hard-coded limits of the diagnostic (rpspy/bands.py).

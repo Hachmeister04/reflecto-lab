@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -63,10 +64,14 @@ class PreviewMatchesReconstruction(unittest.TestCase):
     # --------------------------------------------------------------------------------------------
     # Scenarios: each one configures a model the way a user would through the panels
 
+    def load_model(self, m):
+        """Load the shot of the test into a model."""
+        m.load_shot_from_path(self.shot.shot_dir)
+
     def new_model(self, burst, start, end, step, nperseg=128, noverlap=96, nfft=512):
         m = self.ShotModel()
         with quiet():
-            m.load_shot_from_path(self.shot.shot_dir)
+            self.load_model(m)
         m.detector.burst_size = burst
         m.reconstruction_start_time, m.reconstruction_end_time, m.reconstruction_time_step = start, end, step
         for side in SIDES:
@@ -133,7 +138,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
         params = self.state.ReconstructionInput(
             shot=m.shot, file_path=m.file_path, spect_params=m.spect_params, filters=m.filters,
             frequency_exclusions=m.frequency_exclusions, spectrogram_masks=m.spectrogram_masks,
-            used_bands=list(m.available_bands),
+            used_bands=list(m.used_bands), linearization_shot=m.linearization_reference_shot,
             burst_size=m.detector.burst_size, start_time=p[0], end_time=p[1], time_step=p[2],
             density_cutoff_times=cutoff[0], density_cutoff_values=cutoff[1],
             write_hdf5=False, hdf5_destination_path=None,
@@ -145,7 +150,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
         with quiet():
             profiles = self.rpspy.full_profile_reconstruction(**kwargs)
             per_band = {}
-            for band, side, dtype in m.available_bands:
+            for band, side, dtype in m.used_bands:
                 opts = kwargs['spectrogram_options'][side][band]
                 lower, upper = kwargs['filters'][side][band]
                 per_band[(side, band)] = self.rpspy.batch_processing(
@@ -281,7 +286,7 @@ class PreviewMatchesReconstructionWithW(PreviewMatchesReconstruction):
 
     def test_w_is_a_band_of_the_shot(self):
         m, _ = self.scenario_default()
-        self.assertIn(('W', 'LFS', 'complex'), [tuple(b) for b in m.available_bands])
+        self.assertIn(('W', 'LFS', 'complex'), [tuple(b) for b in m.used_bands])
         self.assertEqual(m.bands_on_side('LFS'), ['K', 'Ka', 'Q', 'V', 'W'])
         self.assertEqual(m.bands_on_side('HFS'), ['K', 'Ka', 'Q', 'V'])
 
@@ -319,6 +324,58 @@ class PreviewMatchesReconstructionWithW(PreviewMatchesReconstruction):
         self.assertEqual((len(profiles.ne_hfs), len(profiles.ne_lfs)), (151, 221))
 
 
+class PreviewMatchesReconstructionWithAnotherLinearizationShot(PreviewMatchesReconstruction):
+    """The same checks on a shot whose W band has no linearization table entries, using those of another shot.
+
+    The shot has W recorded (LFS) but no entries for it in its tables. Another shot has them. Both the
+    preview and the reconstruction have to use the tables of the other shot for every band.
+    """
+
+    @classmethod
+    def make_shot(cls, root):
+        cls.reference = make_synthetic_shot(root, shot=45050, with_w=True, seed=1)
+        return make_synthetic_shot(root, with_w=True, no_table_bands=('W',))
+
+    def load_model(self, m):
+        m.load_shot_from_path(self.shot.shot_dir, linearization_shot=self.reference.shot)
+
+    def test_the_model_uses_the_tables_of_the_other_shot(self):
+        m, _ = self.scenario_default()
+        self.assertEqual(m.linearization_reference_shot, self.reference.shot)
+        self.assertIn(('W', 'LFS', 'complex'), [tuple(b) for b in m.used_bands])
+        self.assertIsNone(m.linearization_shotfile_dir())
+
+    def test_the_reconstruction_is_asked_for_the_tables_of_the_other_shot(self):
+        m, _ = self.scenario_default()
+        params = self.state.ReconstructionInput(
+            shot=m.shot, file_path=m.file_path, spect_params=m.spect_params, filters=m.filters,
+            frequency_exclusions=m.frequency_exclusions, spectrogram_masks=m.spectrogram_masks,
+            used_bands=list(m.used_bands), linearization_shot=m.linearization_reference_shot)
+        kwargs = self.build_kwargs(params)
+        self.assertEqual(kwargs['shot'], m.shot)
+        self.assertEqual(kwargs['shot_linearization'], self.reference.shot)
+        self.assertIsNone(kwargs['linearization_shotfile_dir'])      # not the folder of the shot itself
+
+    def test_only_the_tables_of_the_other_shot_are_read(self):
+        read = []
+        lin = self.rpspy.linearization
+        for name in ('_load_linearization_labels_cached', '_open_frequencies_h5_cached'):
+            real = getattr(lin, name)
+            patch = mock.patch.object(lin, name, (lambda real: lambda path, *a, **k: (read.append(path), real(path, *a, **k))[1])(real))
+            patch.start()
+            self.addCleanup(patch.stop)
+        m, _ = self.scenario_default()
+        self.preview(m, int(m.reconstruction_sweeps()[1]))
+        self.assertTrue(read)
+        self.assertTrue(all(f"{self.reference.shot}_" in os.path.basename(path) for path in read), read)
+        self.assertFalse(any(f"{self.shot.shot}_" in os.path.basename(path) for path in read))
+
+    def test_w_is_on_the_lfs_profile(self):
+        m, _ = self.scenario_default()
+        preview = self.preview(m, int(m.reconstruction_sweeps()[1]))
+        self.assertGreater(preview[3].max(), 7.2e19)
+
+
 MISSING = (('Ka', 'LFS'), ('V', 'HFS'))
 
 
@@ -341,15 +398,15 @@ class PreviewMatchesReconstructionWithMissingBands(PreviewMatchesReconstruction)
 
     def test_the_model_knows_which_bands_the_shot_has(self):
         m, _ = self.scenario_default()
-        have = {(b.name, b.side): b.dtype for b in m.available_bands}
+        have = {(b.name, b.side): b.dtype for b in m.used_bands}
         self.assertEqual(len(have), 6)
         for band, side in MISSING:
             self.assertNotIn((band, side), have)
         self.assertEqual(have[('V', 'LFS')], 'complex')
         self.assertEqual(m.bands_on_side('HFS'), ['K', 'Ka', 'Q'])
         self.assertEqual(m.bands_on_side('LFS'), ['K', 'Q', 'V'])
-        self.assertEqual(m.available_band_names, ['K', 'Ka', 'Q', 'V'])
-        self.assertEqual(m.available_sides, ['HFS', 'LFS'])
+        self.assertEqual(m.used_band_names, ['K', 'Ka', 'Q', 'V'])
+        self.assertEqual(m.used_sides, ['HFS', 'LFS'])
 
     def test_nothing_is_computed_for_the_missing_bands(self):
         m, _ = self.scenario_default()
@@ -357,7 +414,7 @@ class PreviewMatchesReconstructionWithMissingBands(PreviewMatchesReconstruction)
         for band, side in MISSING:
             self.assertIsNone(m.beat_frequencies[side][band].f_probe)
             self.assertIsNone(m.background_spectrograms[side][band])
-        for b in m.available_bands:
+        for b in m.used_bands:
             self.assertIsNotNone(m.beat_frequencies[b.side][b.name].f_probe)
 
     def test_the_reconstruction_is_asked_for_the_bands_of_the_shot_only(self):
@@ -365,19 +422,18 @@ class PreviewMatchesReconstructionWithMissingBands(PreviewMatchesReconstruction)
         params = self.state.ReconstructionInput(shot=m.shot, file_path=m.file_path, spect_params=m.spect_params,
                                                 filters=m.filters, frequency_exclusions=m.frequency_exclusions,
                                                 spectrogram_masks=m.spectrogram_masks,
-                                                used_bands=list(m.available_bands))
+                                                used_bands=list(m.used_bands))
         used = self.build_kwargs(params)['used_bands']
-        self.assertEqual(sorted(used), sorted(m.available_bands))
+        self.assertEqual(sorted(used), sorted(m.used_bands))
         self.assertNotIn(('Ka', 'LFS', 'real'), used)
 
     def test_loading_another_shot_forgets_the_bands_of_the_previous_one(self):
         m, _ = self.scenario_default()
         self.preview(m, int(m.reconstruction_sweeps()[1]))
-        with tempfile.TemporaryDirectory() as root:
-            other = make_synthetic_shot(root, shot=45001)   # has every band
-            with quiet():
-                m.load_shot_from_path(other.shot_dir)
-        self.assertEqual(len(m.available_bands), 8)
+        other = make_synthetic_shot(self._tmp.name, shot=45001)   # has every band, and its tables in the same folder
+        with quiet():
+            m.load_shot_from_path(other.shot_dir)
+        self.assertEqual(len(m.used_bands), 8)
         self.assertTrue(all(m.beat_frequencies[s][b].f_probe is None for s in SIDES for b in BANDS))
 
     def test_a_folder_without_bands_is_not_loaded(self):
@@ -390,7 +446,7 @@ class PreviewMatchesReconstructionWithMissingBands(PreviewMatchesReconstruction)
             with self.assertRaises(FileNotFoundError), quiet():
                 m.load_shot_from_path(empty.shot_dir)
         self.assertEqual(m.shot, 0)
-        self.assertEqual(m.available_bands, [])
+        self.assertEqual(m.used_bands, [])
 
 
 if __name__ == '__main__':

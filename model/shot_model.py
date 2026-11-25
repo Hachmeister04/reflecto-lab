@@ -11,6 +11,7 @@ from constants import (
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, 
     DEFAULT_CUSTOM_DENSITY_CUTOFF, DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
 )
+from model.shot_inspection import ShotInspection
 from model.state import (
     SpectrogramParams, FilterRange, FrequencyExclusion, SpectrogramMask,
     InitValues, InitFileData, BeatFrequencyData,
@@ -34,10 +35,16 @@ class ShotModel:
         self.file_path = ''
         self.time_stamps = None
 
-        # Bands that the loaded shot has: a list of rpspy.BandSignal (name, side, dtype).
-        # The per-detector state below exists for every band the diagnostic can have, but
-        # only these are read and processed.
-        self.available_bands = []
+        # Linearization: the shot whose tables are used for every band. The shot itself, unless the user
+        # chose another because its own tables lack entries for a band.
+        self.linearization_reference_shot = 0
+
+        # Bands: a list of rpspy.BandSignal (name, side, dtype). The raw signals that the shot has, and
+        # the ones among them that are processed (they have linearization entries, and were not left out
+        # by the user). The per-detector state below exists for every band the diagnostic can have, but
+        # only the used ones are read and processed.
+        self.raw_bands = []
+        self.used_bands = []
 
         # Per-detector state: Dict[side][band]
         self.spect_params = {
@@ -105,50 +112,91 @@ class ShotModel:
 
     # --- Shot loading ---
 
-    def load_shot_from_path(self, file_path):
-        """Load shot from file path. Raises FileNotFoundError/ValueError on failure."""
+    def load_shot_from_path(self, file_path, linearization_shot=None):
+        """Load shot from file path, with all the bands that can be processed.
+
+        Raises FileNotFoundError/ValueError on failure. See `inspect_shot` and `load_shot`
+        to choose the bands.
+        """
         from utils.helpers import get_shot_from_path
-        self._set_shot(get_shot_from_path(file_path), file_path)
+        self.load_shot(self.inspect_shot(get_shot_from_path(file_path), file_path, linearization_shot))
 
-    def load_shot_from_number(self, shot):
-        """Load shot by number. Raises FileNotFoundError on failure."""
+    def load_shot_from_number(self, shot, linearization_shot=None):
+        """Load shot by number, with all the bands that can be processed. Raises FileNotFoundError on failure."""
         from utils.helpers import get_path_from_shot
-        self._set_shot(shot, get_path_from_shot(shot))
+        self.load_shot(self.inspect_shot(shot, get_path_from_shot(shot), linearization_shot))
 
-    def _set_shot(self, shot, file_path):
-        """Make `shot` the loaded one, if it has data. Nothing changes if it raises.
+    def inspect_shot(self, shot, file_path, linearization_shot=None):
+        """What a shot has: raw signals, and the entries of each band in the linearization tables.
+
+        Does not change the model. The tables are those of `linearization_shot`, which defaults to `shot`
+        itself. Tables that cannot be read do not raise: they are reported by the inspection (a band
+        cannot be processed without them).
 
         Raises:
             FileNotFoundError: if the folder has no timestamps, or none of the bands.
         """
         rpspy.get_timestamps(shot, file_path)
-        available_bands = rpspy.get_available_bands(shot, file_path)
-        if not available_bands:
+        raw_bands = rpspy.get_available_bands(shot, file_path)
+        if not raw_bands:
             raise FileNotFoundError(f"Shot {shot} has no band signals in {file_path}")
 
-        self.shot = shot
-        self.file_path = file_path
-        self.available_bands = available_bands
+        linearization_shot = shot if linearization_shot is None else int(linearization_shot)
+        try:
+            table_entries, table_error = rpspy.get_linearization_table_entries(linearization_shot), None
+        except FileNotFoundError as e:
+            table_entries, table_error = {}, str(e)
+        return ShotInspection(shot, file_path, linearization_shot, list(raw_bands), table_entries, table_error)
+
+    def load_shot(self, inspection, selected=None):
+        """Make the inspected shot the loaded one, processing the `selected` bands.
+
+        Parameters:
+            inspection: ShotInspection from `inspect_shot`.
+            selected: set of (band name, side), or None for all the bands that can be processed.
+                The ones that cannot (no raw signal, no linearization entries) are ignored.
+
+        Raises:
+            ValueError: if no band is left to process. Nothing changes if it raises.
+        """
+        usable = inspection.usable_bands()
+        used_bands = usable if selected is None else [b for b in usable if (b.name, b.side) in selected]
+        if not used_bands:
+            if not usable:
+                raise ValueError(
+                    f"No band of shot {inspection.shot} can be processed: none has entries in the "
+                    f"linearization tables of shot {inspection.linearization_shot}.")
+            raise ValueError("No band is selected.")
+
+        self.shot = inspection.shot
+        self.file_path = inspection.file_path
+        self.linearization_reference_shot = inspection.linearization_shot
+        self.raw_bands = list(inspection.raw_bands)
+        self.used_bands = used_bands
 
         # What was computed for the previous shot must not be taken for this one's
         # (a band that the previous shot had and this one does not)
         self.beat_frequencies = {side: {band: BeatFrequencyData() for band in BANDS} for side in SIDES}
         self.background_spectrograms = {side: {band: None for band in BANDS} for side in SIDES}
 
-    # --- Available bands ---
+    def linearization_shotfile_dir(self):
+        """Folder of the shot of the linearization, when it is not the shot itself: left to rpspy to find."""
+        return self.file_path if self.linearization_reference_shot == self.shot else None
+
+    # --- Bands in use ---
 
     @property
-    def available_band_names(self):
-        """Names of the bands that the shot has on any side, in the order of BANDS."""
-        return [name for name in BANDS if any(b.name == name for b in self.available_bands)]
+    def used_band_names(self):
+        """Names of the bands that are processed on any side, in the order of BANDS."""
+        return [name for name in BANDS if any(b.name == name for b in self.used_bands)]
 
     def bands_on_side(self, side):
-        """Names of the bands that the shot has on `side`, in the order of BANDS."""
-        return [name for name in BANDS if any(b.name == name and b.side == side for b in self.available_bands)]
+        """Names of the bands that are processed on `side`, in the order of BANDS."""
+        return [name for name in BANDS if any(b.name == name and b.side == side for b in self.used_bands)]
 
     @property
-    def available_sides(self):
-        """Sides that have at least one band in the shot, in the order of SIDES."""
+    def used_sides(self):
+        """Sides that have at least one band that is processed, in the order of SIDES."""
         return [side for side in SIDES if self.bands_on_side(side)]
 
     def post_load_init(self):
@@ -257,8 +305,8 @@ class ShotModel:
         first request of each takes a while, which is better spent at load than at the first plot.
         """
         futures = [
-            self._executor.submit(rpspy.get_common_frequency_axis, self.shot, band)
-            for band in self.available_band_names
+            self._executor.submit(rpspy.get_common_frequency_axis, self.linearization_reference_shot, band)
+            for band in self.used_band_names
         ]
         futures.append(self._executor.submit(rpspy.get_qhfs_signal_deviation, self.shot, self.file_path))
         for f in futures:
@@ -279,10 +327,10 @@ class ShotModel:
         data -= 2**11 if signal_type == 'real' else (2**11 + 1j * 2**11)
         _t1 = _time.perf_counter()
 
-        table = cached_get_auto_linearization_from_shares(self.shot, d.band, d.sweep)
+        table = cached_get_auto_linearization_from_shares(self.linearization_reference_shot, d.band, d.sweep)
         _t2 = _time.perf_counter()
 
-        x_data, data = rpspy.linearize(table, data, new_x=rpspy.get_common_frequency_axis(self.shot, d.band))
+        x_data, data = rpspy.linearize(table, data, new_x=rpspy.get_common_frequency_axis(self.linearization_reference_shot, d.band))
         _t3 = _time.perf_counter()
 
         logger.info(
@@ -311,8 +359,8 @@ class ShotModel:
             self.shot, band, side, self.signal_type(band, side), all_sweeps, burst_mode,
             subtract_dispersion=bool(sp.subtract_dispersion),
             nperseg=sp.nperseg, noverlap=sp.noverlap, nfft=sp.nfft,
-            shotfile_dir=self.file_path, shot_linearization=self.shot,
-            linearization_shotfile_dir=self.file_path,
+            shotfile_dir=self.file_path, shot_linearization=self.linearization_reference_shot,
+            linearization_shotfile_dir=self.linearization_shotfile_dir(),
         )
 
     def compute_group_delay(self, band_data, band, side, spectrogram, copy):
@@ -389,7 +437,7 @@ class ShotModel:
 
         # Remaining detectors — run in parallel
         others = [
-            (b.name, b.side) for b in self.available_bands
+            (b.name, b.side) for b in self.used_bands
             if not (b.side == d.side and b.name == d.band)
         ]
 
@@ -414,14 +462,14 @@ class ShotModel:
             sp.background_sweep, self._background_burst_size(sp),
             subtract_dispersion=bool(sp.subtract_dispersion),
             nperseg=sp.nperseg, noverlap=sp.noverlap, nfft=sp.nfft,
-            shotfile_dir=self.file_path, shot_linearization=self.shot,
-            linearization_shotfile_dir=self.file_path,
+            shotfile_dir=self.file_path, shot_linearization=self.linearization_reference_shot,
+            linearization_shotfile_dir=self.linearization_shotfile_dir(),
             n_sweeps=len(self.time_stamps),
         )
 
     def compute_all_backgrounds(self):
         """Calculate backgrounds for all the bands of the shot."""
-        for b in self.available_bands:
+        for b in self.used_bands:
             self.compute_background(b.name, b.side)
 
     # --- Profile ---
