@@ -14,6 +14,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -40,9 +41,14 @@ def quiet():
 class PreviewMatchesReconstruction(unittest.TestCase):
 
     @classmethod
+    def make_shot(cls, root):
+        """The shot to test with. A synthetic one with all the bands of K, Ka, Q and V."""
+        return make_synthetic_shot(root)
+
+    @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
-        cls.shot = make_synthetic_shot(cls._tmp.name)
+        cls.shot = cls.make_shot(cls._tmp.name)
         install_environment(cls.shot)
         import rpspy
         from model.shot_model import ShotModel
@@ -58,10 +64,14 @@ class PreviewMatchesReconstruction(unittest.TestCase):
     # --------------------------------------------------------------------------------------------
     # Scenarios: each one configures a model the way a user would through the panels
 
+    def load_model(self, m):
+        """Load the shot of the test into a model."""
+        m.load_shot_from_path(self.shot.shot_dir)
+
     def new_model(self, burst, start, end, step, nperseg=128, noverlap=96, nfft=512):
         m = self.ShotModel()
         with quiet():
-            m.load_shot_from_path(self.shot.shot_dir)
+            self.load_model(m)
         m.detector.burst_size = burst
         m.reconstruction_start_time, m.reconstruction_end_time, m.reconstruction_time_step = start, end, step
         for side in SIDES:
@@ -128,6 +138,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
         params = self.state.ReconstructionInput(
             shot=m.shot, file_path=m.file_path, spect_params=m.spect_params, filters=m.filters,
             frequency_exclusions=m.frequency_exclusions, spectrogram_masks=m.spectrogram_masks,
+            used_bands=list(m.used_bands), linearization_shot=m.linearization_reference_shot,
             burst_size=m.detector.burst_size, start_time=p[0], end_time=p[1], time_step=p[2],
             density_cutoff_times=cutoff[0], density_cutoff_values=cutoff[1],
             write_hdf5=False, hdf5_destination_path=None,
@@ -139,19 +150,18 @@ class PreviewMatchesReconstruction(unittest.TestCase):
         with quiet():
             profiles = self.rpspy.full_profile_reconstruction(**kwargs)
             per_band = {}
-            for side in SIDES:
-                for band in BANDS:
-                    opts = kwargs['spectrogram_options'][side][band]
-                    lower, upper = kwargs['filters'][side][band]
-                    per_band[(side, band)] = self.rpspy.batch_processing(
-                        kwargs['shot'], band, side, 'complex' if band == 'V' else 'real',
-                        kwargs['start_time'], kwargs['end_time'], kwargs['time_step'], kwargs['burst'],
-                        lower, upper, kwargs['subtract_background_on_bands'], kwargs['subtract_dispersion_on_bands'],
-                        kwargs['shotfile_dir'], kwargs['shot_linearization'], kwargs['linearization_shotfile_dir'],
-                        kwargs['sweep_linearization'], nperseg=opts['nperseg'], nfft=opts['nfft'], noverlap=opts['noverlap'],
-                        background_sweep=kwargs['background_sweeps'][side][band],
-                        background_burst_size=kwargs['background_burst_size'][side][band],
-                        masks=kwargs['spectrogram_masks'][side][band])
+            for band, side, dtype in m.used_bands:
+                opts = kwargs['spectrogram_options'][side][band]
+                lower, upper = kwargs['filters'][side][band]
+                per_band[(side, band)] = self.rpspy.batch_processing(
+                    kwargs['shot'], band, side, dtype,
+                    kwargs['start_time'], kwargs['end_time'], kwargs['time_step'], kwargs['burst'],
+                    lower, upper, kwargs['subtract_background_on_bands'], kwargs['subtract_dispersion_on_bands'],
+                    kwargs['shotfile_dir'], kwargs['shot_linearization'], kwargs['linearization_shotfile_dir'],
+                    kwargs['sweep_linearization'], nperseg=opts['nperseg'], nfft=opts['nfft'], noverlap=opts['noverlap'],
+                    background_sweep=kwargs['background_sweeps'][side][band],
+                    background_burst_size=kwargs['background_burst_size'][side][band],
+                    masks=kwargs['spectrogram_masks'][side][band])
         return profiles, per_band
 
     def preview(self, m, sweep):
@@ -167,7 +177,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
             return m.compute_profile('R (m)', t)
 
     def check(self, m, cutoff):
-        (times, ne, r_hfs, r_lfs), per_band = self.reconstruct(m, cutoff)
+        (times, ne_hfs, ne_lfs, r_hfs, r_lfs), per_band = self.reconstruct(m, cutoff)
 
         grid = m.reconstruction_sweeps()
         np.testing.assert_array_equal(m.time_stamps[grid], times)     # same instants as the reconstruction
@@ -183,8 +193,8 @@ class PreviewMatchesReconstruction(unittest.TestCase):
                     np.testing.assert_allclose(bf.y_beat_time, group_delay[i], rtol=1e-9, atol=0)
 
             t = times[i]
-            for name, r_prev, ne_prev, r_rec in (('HFS', preview[0], preview[1], r_hfs[i]),
-                                                 ('LFS', preview[2], preview[3], r_lfs[i])):
+            for name, r_prev, ne_prev, r_rec, ne in (('HFS', preview[0], preview[1], r_hfs[i], ne_hfs),
+                                                     ('LFS', preview[2], preview[3], r_lfs[i], ne_lfs)):
                 with self.subTest(instant=i, side=name, what='profile'):
                     where = np.searchsorted(ne, ne_prev)
                     np.testing.assert_array_equal(ne[where], ne_prev)   # same density grid
@@ -214,7 +224,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
     def test_noisy_hfs_and_overlapping_bursts(self):
         m, cutoff = self.scenario_noisy_hfs_and_overlapping_bursts()
         r_hfs = self.check(m, cutoff)
-        f = np.linspace(0, 75e9, 151)
+        f = 0.5e9 * np.arange(r_hfs.shape[1])      # The frequency axis of the profiles: 0.5 GHz steps
         # Quiet Q-HFS: no HFS profile above 36 GHz, where there is something to show it is NaN
         self.assertTrue(np.isnan(r_hfs[:, f >= 36e9]).all())
         self.assertTrue(np.isfinite(r_hfs[:, f < 30e9]).any())
@@ -265,6 +275,178 @@ class PreviewMatchesReconstruction(unittest.TestCase):
                 shown = m.snap_to_reconstruction_grid(shown, previous=shown)
                 self.assertIn(shown, grid)
                 self.assertEqual(shown, int(grid[np.argmin(np.abs(grid - shown))]))
+
+
+class PreviewMatchesReconstructionWithW(PreviewMatchesReconstruction):
+    """The same checks on a shot that has the W band (LFS only, up to 102 GHz)."""
+
+    @classmethod
+    def make_shot(cls, root):
+        return make_synthetic_shot(root, with_w=True)
+
+    def test_w_is_a_band_of_the_shot(self):
+        m, _ = self.scenario_default()
+        self.assertIn(('W', 'LFS', 'complex'), [tuple(b) for b in m.used_bands])
+        self.assertEqual(m.bands_on_side('LFS'), ['K', 'Ka', 'Q', 'V', 'W'])
+        self.assertEqual(m.bands_on_side('HFS'), ['K', 'Ka', 'Q', 'V'])
+
+    def test_w_subtracts_dispersion_by_default_like_v(self):
+        m = self.ShotModel()
+        self.assertTrue(m.spect_params['LFS']['W'].subtract_dispersion)
+        self.assertTrue(m.spect_params['LFS']['V'].subtract_dispersion)
+        self.assertFalse(m.spect_params['LFS']['Q'].subtract_dispersion)
+
+    def test_the_lfs_profile_shown_goes_past_the_v_band(self):
+        m, cutoff = self.scenario_default()
+        t = m.time_stamps[int(m.reconstruction_sweeps()[1])]
+        preview = self.preview(m, int(m.reconstruction_sweeps()[1]))
+        r_lfs, ne_lfs = preview[2], preview[3]
+        r_hfs, ne_hfs = preview[0], preview[1]
+        self.assertGreater(ne_lfs.max(), 7.2e19, "LFS profile stops at the top of V")
+        self.assertLess(ne_hfs.max(), 7.1e19)
+        self.assertGreater(len(m.aggregated_lfs.f_probe), 0)
+        self.assertGreater(m.aggregated_lfs.f_probe.max(), 75.5e9)
+
+    def test_frequency_exclusions_can_be_set_on_w(self):
+        import constants
+        self.assertEqual((constants.FP_MIN, constants.FP_MAX), self.rpspy.EXCLUSION_FREQUENCY_LIMITS)
+        self.assertLessEqual(constants.FP_MIN, 17e9)
+        self.assertGreaterEqual(constants.FP_MAX, 102e9)
+
+    def test_each_side_is_shown_on_its_own_density_axis(self):
+        m, _ = self.scenario_default()
+        t = int(m.reconstruction_sweeps()[1])
+        with quiet():
+            m.detector.sweep = t
+            m.compute_current_fft(); m.compute_current_display(); m.compute_all_beatf()
+            m.compute_aggregated_delays(m.time_stamps[t])
+            profiles = m._invert_current()
+        self.assertEqual((len(profiles.ne_hfs), len(profiles.ne_lfs)), (151, 221))
+
+
+class PreviewMatchesReconstructionWithAnotherLinearizationShot(PreviewMatchesReconstruction):
+    """The same checks on a shot whose W band has no linearization table entries, using those of another shot.
+
+    The shot has W recorded (LFS) but no entries for it in its tables. Another shot has them. Both the
+    preview and the reconstruction have to use the tables of the other shot for every band.
+    """
+
+    @classmethod
+    def make_shot(cls, root):
+        cls.reference = make_synthetic_shot(root, shot=45050, with_w=True, seed=1)
+        return make_synthetic_shot(root, with_w=True, no_table_bands=('W',))
+
+    def load_model(self, m):
+        m.load_shot_from_path(self.shot.shot_dir, linearization_shot=self.reference.shot)
+
+    def test_the_model_uses_the_tables_of_the_other_shot(self):
+        m, _ = self.scenario_default()
+        self.assertEqual(m.linearization_reference_shot, self.reference.shot)
+        self.assertIn(('W', 'LFS', 'complex'), [tuple(b) for b in m.used_bands])
+        self.assertIsNone(m.linearization_shotfile_dir())
+
+    def test_the_reconstruction_is_asked_for_the_tables_of_the_other_shot(self):
+        m, _ = self.scenario_default()
+        params = self.state.ReconstructionInput(
+            shot=m.shot, file_path=m.file_path, spect_params=m.spect_params, filters=m.filters,
+            frequency_exclusions=m.frequency_exclusions, spectrogram_masks=m.spectrogram_masks,
+            used_bands=list(m.used_bands), linearization_shot=m.linearization_reference_shot)
+        kwargs = self.build_kwargs(params)
+        self.assertEqual(kwargs['shot'], m.shot)
+        self.assertEqual(kwargs['shot_linearization'], self.reference.shot)
+        self.assertIsNone(kwargs['linearization_shotfile_dir'])      # not the folder of the shot itself
+
+    def test_only_the_tables_of_the_other_shot_are_read(self):
+        read = []
+        lin = self.rpspy.linearization
+        for name in ('_load_linearization_labels_cached', '_open_frequencies_h5_cached'):
+            real = getattr(lin, name)
+            patch = mock.patch.object(lin, name, (lambda real: lambda path, *a, **k: (read.append(path), real(path, *a, **k))[1])(real))
+            patch.start()
+            self.addCleanup(patch.stop)
+        m, _ = self.scenario_default()
+        self.preview(m, int(m.reconstruction_sweeps()[1]))
+        self.assertTrue(read)
+        self.assertTrue(all(f"{self.reference.shot}_" in os.path.basename(path) for path in read), read)
+        self.assertFalse(any(f"{self.shot.shot}_" in os.path.basename(path) for path in read))
+
+    def test_w_is_on_the_lfs_profile(self):
+        m, _ = self.scenario_default()
+        preview = self.preview(m, int(m.reconstruction_sweeps()[1]))
+        self.assertGreater(preview[3].max(), 7.2e19)
+
+
+MISSING = (('Ka', 'LFS'), ('V', 'HFS'))
+
+
+class PreviewMatchesReconstructionWithMissingBands(PreviewMatchesReconstruction):
+    """The same checks on a shot that lacks Ka-LFS and V-HFS (its files are not there).
+
+    Every test of the full shot runs again here, and the shot being loaded, previewed and
+    reconstructed without those bands is what is being checked.
+    """
+
+    @classmethod
+    def make_shot(cls, root):
+        shot = make_synthetic_shot(root)
+        for band, side in MISSING:
+            files = [f"RTR_{shot.shot}_{band}-{side}.sig"] if band != 'V' else \
+                [f"RTR_{shot.shot}_Vi-{side}.sig", f"RTR_{shot.shot}_Vq-{side}.sig"]
+            for name in files:
+                os.remove(os.path.join(shot.shot_dir, name))
+        return shot
+
+    def test_the_model_knows_which_bands_the_shot_has(self):
+        m, _ = self.scenario_default()
+        have = {(b.name, b.side): b.dtype for b in m.used_bands}
+        self.assertEqual(len(have), 6)
+        for band, side in MISSING:
+            self.assertNotIn((band, side), have)
+        self.assertEqual(have[('V', 'LFS')], 'complex')
+        self.assertEqual(m.bands_on_side('HFS'), ['K', 'Ka', 'Q'])
+        self.assertEqual(m.bands_on_side('LFS'), ['K', 'Q', 'V'])
+        self.assertEqual(m.used_band_names, ['K', 'Ka', 'Q', 'V'])
+        self.assertEqual(m.used_sides, ['HFS', 'LFS'])
+
+    def test_nothing_is_computed_for_the_missing_bands(self):
+        m, _ = self.scenario_default()
+        self.preview(m, int(m.reconstruction_sweeps()[1]))
+        for band, side in MISSING:
+            self.assertIsNone(m.beat_frequencies[side][band].f_probe)
+            self.assertIsNone(m.background_spectrograms[side][band])
+        for b in m.used_bands:
+            self.assertIsNotNone(m.beat_frequencies[b.side][b.name].f_probe)
+
+    def test_the_reconstruction_is_asked_for_the_bands_of_the_shot_only(self):
+        m, _ = self.scenario_default()
+        params = self.state.ReconstructionInput(shot=m.shot, file_path=m.file_path, spect_params=m.spect_params,
+                                                filters=m.filters, frequency_exclusions=m.frequency_exclusions,
+                                                spectrogram_masks=m.spectrogram_masks,
+                                                used_bands=list(m.used_bands))
+        used = self.build_kwargs(params)['used_bands']
+        self.assertEqual(sorted(used), sorted(m.used_bands))
+        self.assertNotIn(('Ka', 'LFS', 'real'), used)
+
+    def test_loading_another_shot_forgets_the_bands_of_the_previous_one(self):
+        m, _ = self.scenario_default()
+        self.preview(m, int(m.reconstruction_sweeps()[1]))
+        other = make_synthetic_shot(self._tmp.name, shot=45001)   # has every band, and its tables in the same folder
+        with quiet():
+            m.load_shot_from_path(other.shot_dir)
+        self.assertEqual(len(m.used_bands), 8)
+        self.assertTrue(all(m.beat_frequencies[s][b].f_probe is None for s in SIDES for b in BANDS))
+
+    def test_a_folder_without_bands_is_not_loaded(self):
+        m = self.ShotModel()
+        with tempfile.TemporaryDirectory() as root:
+            empty = make_synthetic_shot(root, shot=45002, n_sweeps=8)
+            for name in os.listdir(empty.shot_dir):
+                if name.endswith('.sig'):
+                    os.remove(os.path.join(empty.shot_dir, name))
+            with self.assertRaises(FileNotFoundError), quiet():
+                m.load_shot_from_path(empty.shot_dir)
+        self.assertEqual(m.shot, 0)
+        self.assertEqual(m.used_bands, [])
 
 
 if __name__ == '__main__':

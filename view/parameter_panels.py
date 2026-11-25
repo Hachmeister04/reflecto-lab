@@ -1,6 +1,7 @@
 from pyqtgraph.parametertree import Parameter
 import getpass
 from constants import (
+    BANDS, SIDES,
     DEFAULT_NPERSEG, DEFAULT_NOVERLAP, DEFAULT_NFFT, DEFAULT_BURST_SIZE, DEFAULT_POSTFIX_CONFIG,
     MAX_BURST_SIZE,
     DEFAULT_FILTER_LOW, DEFAULT_FILTER_HIGH,
@@ -19,6 +20,9 @@ class ParameterPanels:
         self.file = Parameter.create(name='File', type='group', children=[
             {'name': 'Open', 'type': 'file', 'value': None, 'fileMode': 'Directory'},
             {'name': 'Shot', 'type': 'int'},
+            # The shot whose linearization tables are used. It is the shot itself unless its tables lack entries
+            # for a band and the tables of another shot are used instead.
+            {'name': 'Linearization', 'type': 'int'},
         ])
         self.file.child('Open').setValue('')
 
@@ -37,8 +41,9 @@ class ParameterPanels:
         self.config.child('Load').setValue('')
 
         self.detector = Parameter.create(name='Detector', type='group', visible=False, children=[
-            {'name': 'Band', 'type': 'list', 'limits': ['K', 'Ka', 'Q', 'V']},
-            {'name': 'Side', 'type': 'list', 'limits': ['HFS', 'LFS']},
+            # Everything the diagnostic can have, until a shot is loaded and the lists are narrowed to its bands
+            {'name': 'Band', 'type': 'list', 'limits': list(BANDS)},
+            {'name': 'Side', 'type': 'list', 'limits': list(SIDES)},
         ])
 
         self.sweep = Parameter.create(name='Sweep', type='group', visible=False, children=[

@@ -1,14 +1,12 @@
 import numpy as np
 import getpass
-# Detector configurations
-BANDS = ('K', 'Ka', 'Q', 'V')
-SIDES = ('HFS', 'LFS')
-# Frequency range of the reflectometer
-# This is used in setting the limits of the frequencies in the frequency exclusion parameters. 
-# They should be slightly smaller and larger, respectively, than the actual frequency range of the reflectometer.
-# This allows the user to easly remove the first point of the frequency range, WITHOUT REMOVING THE INITIALIZATION POINT.
-FP_MIN = 16e9 
-FP_MAX = 76e9
+# Detector configurations: the most the diagnostic can have, defined in rpspy.
+# What a given shot has is found when it is loaded, see ShotModel.used_bands.
+from rpspy.bands import BAND_NAMES as BANDS, SIDES
+# Limits of the frequencies in the frequency exclusion parameters. Defined in rpspy, with the rest of the
+# hard-coded limits of the diagnostic (rpspy/bands.py).
+from rpspy.bands import EXCLUSION_FREQUENCY_LIMITS as _EXCLUSION_FREQUENCY_LIMITS
+FP_MIN, FP_MAX = _EXCLUSION_FREQUENCY_LIMITS
 
 # Window
 WINDOW_SIZE = (1600, 800)
@@ -52,9 +50,6 @@ DECIMALS_NOVERLAP = 6
 DECIMALS_NFFT = 6
 DECIMALS_EXCLUSIONS = 6
 DECIMALS_INIT = 6
-
-# Profile Properties
-PROFILE_INVERSION_RESOLUTION = 150  # points
 
 # Profile Colors
 HFS_COLOR = 'r'

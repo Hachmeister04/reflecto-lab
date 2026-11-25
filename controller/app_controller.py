@@ -6,7 +6,7 @@ import numpy as np
 import aug_sfutils as sf
 from scipy.interpolate import interp1d
 from PyQt5.QtWidgets import QApplication, QFileDialog
-from PyQt5.QtCore import QObject, QTimer
+from PyQt5.QtCore import Qt, QObject, QTimer
 
 from constants import (
     BANDS, SIDES, MIN_NPERSEG, MAX_NFFT,
@@ -18,10 +18,11 @@ from constants import (
 from model.shot_model import ShotModel
 from model.state import ReconstructionInput, FrequencyExclusion, SpectrogramMask
 from view.main_window import MainWindowView
+from view.band_selection_dialog import BandSelectionDialog
 from view.reconstruction_window import ReconstructionWindow
 from view.parameter_panels import ParameterPanels
 from view.plot_renderers import PlotRenderer
-from utils.helpers import round_to_nearest
+from utils.helpers import round_to_nearest, get_shot_from_path, get_path_from_shot
 from utils.ui_helpers import show_warning, loading_indicator
 
 logger = logging.getLogger(__name__)
@@ -79,8 +80,10 @@ class AppController(QObject):
         # File/shot
         self._h_shot_open = lambda: self._on_shot_changed('open')
         self._h_shot_number = lambda: self._on_shot_changed('shot')
+        self._h_linearization_shot = lambda: self._on_shot_changed('linearization')
         p.file.child('Open').sigValueChanged.connect(self._h_shot_open)
         p.file.child('Shot').sigValueChanged.connect(self._h_shot_number)
+        p.file.child('Linearization').sigValueChanged.connect(self._h_linearization_shot)
 
         # Initialization
         self._h_init_type = lambda: self._on_init_changed('type')
@@ -245,6 +248,85 @@ class AppController(QObject):
 
     # --- Shot loading ---
 
+    def _select_and_load(self, source, loading):
+        """Inspect the shot, let the user choose its bands, and load it into the model.
+
+        `source` is what the user changed: the folder ('open'), the shot number ('shot') or the shot whose
+        linearization tables are used ('linearization'). The shot is inspected first (the bands that it has,
+        and the entries of each in the linearization tables) and the user chooses the bands to use.
+
+        Returns True if the shot was loaded. Otherwise nothing changed in the model, and the File panel says
+        which shot is loaded.
+        """
+        p = self.panels
+        m = self.model
+
+        try:
+            if source == 'open':
+                file_path = p.file.child('Open').value()
+                inspection = m.inspect_shot(get_shot_from_path(file_path), file_path)
+            elif source == 'shot':
+                shot = p.file.child('Shot').value()
+                inspection = m.inspect_shot(shot, get_path_from_shot(shot))
+            else:  # 'linearization': the shot that is open, with the tables of another
+                if not m.file_path:      # no shot is open yet: there is nothing to use the tables for
+                    self._show_loaded_shot_in_file_panel()
+                    return False
+                inspection = m.inspect_shot(m.shot, m.file_path, p.file.child('Linearization').value())
+        except (ValueError, FileNotFoundError):
+            loading.hide()
+            show_warning()
+            self._show_loaded_shot_in_file_panel()
+            return False
+
+        # Tell the user what the shot has and let them choose the bands
+        loading.hide()
+        choice = self._choose_bands(inspection)
+        if choice is None:
+            self._show_loaded_shot_in_file_panel()
+            return False
+        inspection, selected = choice
+        loading.show()
+
+        try:
+            m.load_shot(inspection, selected)
+        except ValueError:
+            loading.hide()
+            show_warning()
+            self._show_loaded_shot_in_file_panel()
+            return False
+        self._show_loaded_shot_in_file_panel()
+        return True
+
+    def _show_loaded_shot_in_file_panel(self):
+        """Make the File panel say which shot is loaded, and with which linearization tables."""
+        m = self.model
+        p = self.panels
+        p.file.child('Open').setValue(m.file_path, blockSignal=self._h_shot_open)
+        p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
+        p.file.child('Linearization').setValue(m.linearization_reference_shot, blockSignal=self._h_linearization_shot)
+
+    def _choose_bands(self, inspection):
+        """Show what the shot has and ask which bands to use.
+
+        Returns (inspection, selected bands) or None if the user cancelled. The inspection is the one shown last,
+        which is another if the user checked the linearization tables of another shot.
+        """
+        m = self.model
+        dialog = BandSelectionDialog(
+            inspection,
+            lambda linearization_shot: m.inspect_shot(inspection.shot, inspection.file_path, linearization_shot),
+            self.view,
+        )
+        QApplication.restoreOverrideCursor()      # the busy cursor does not belong over a dialog
+        try:
+            accepted = dialog.exec()
+        finally:
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+        if not accepted:
+            return None
+        return dialog.inspection(), dialog.selection()
+
     def _on_shot_changed(self, source):
         """Handles shot/file load, telling the user that it is in progress."""
         with loading_indicator(self.view, "Opening shot...") as loading:
@@ -255,28 +337,8 @@ class AppController(QObject):
         p = self.panels
         m = self.model
 
-        if source == 'open':
-            file_path = p.file.child('Open').value()
-            try:
-                m.load_shot_from_path(file_path)
-                p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
-            except (ValueError, FileNotFoundError):
-                loading.hide()
-                show_warning()
-                return
-            finally:
-                p.file.child('Open').setValue(m.file_path, blockSignal=self._h_shot_open)
-
-        elif source == 'shot':
-            shot = p.file.child('Shot').value()
-            try:
-                m.load_shot_from_number(shot)
-                p.file.child('Open').setValue(m.file_path, blockSignal=self._h_shot_open)
-            except FileNotFoundError:
-                loading.hide()
-                show_warning()
-                p.file.child('Shot').setValue(m.shot, blockSignal=self._h_shot_number)
-                return
+        if not self._select_and_load(source, loading):
+            return
 
         # Show all parameters
         self.view.show_post_load_params(self.panels)
@@ -284,6 +346,9 @@ class AppController(QObject):
         # Except parameters that default to hidden states
         #p.reconstruct.child('Apply Custom Density Cutoff').setOpts(readonly=True)
         #p.reconstruct.child('Apply Custom Density Cutoff').setOpts(visible=False)
+
+        # Offer only the bands that this shot has
+        self._update_detector_choices()
 
         # Sync detector
         self._sync_detector_from_panels()
@@ -361,9 +426,39 @@ class AppController(QObject):
 
     # --- Detector ---
 
+    def _update_detector_choices(self):
+        """Offer in the Band and Side lists only what the loaded shot has.
+
+        The bands on offer are those of the selected side (W, for example, is only on the LFS).
+        The current choice is kept if the shot has it, otherwise the first one available is chosen.
+        Does not notify: the caller goes on to read the detector from the panels.
+        """
+        m = self.model
+        side_param = self.panels.detector.child('Side')
+        band_param = self.panels.detector.child('Band')
+
+        sides = m.used_sides
+        side = side_param.value() if side_param.value() in sides else sides[0]
+        bands = m.bands_on_side(side)
+        band = band_param.value() if band_param.value() in bands else bands[0]
+
+        # Changing the limits of a list can change its value, which would run the detector handlers
+        side_param.sigValueChanged.disconnect(self._h_det_side)
+        band_param.sigValueChanged.disconnect(self._h_det_band)
+        try:
+            side_param.setLimits(sides)
+            side_param.setValue(side)
+            band_param.setLimits(bands)
+            band_param.setValue(band)
+        finally:
+            side_param.sigValueChanged.connect(self._h_det_side)
+            band_param.sigValueChanged.connect(self._h_det_band)
+
     def _on_detector_changed(self, source):
         """Band/side change."""
         p = self.panels
+        if source == 'side':
+            self._update_detector_choices()  # The new side may not have the band that was selected
         self._sync_detector_from_panels()
         self._sync_params_to_panels()
 
@@ -598,9 +693,7 @@ class AppController(QObject):
                 self._draw_spectrogram()
                 m.compute_one_beatf(d.band, d.side)
             elif source in ('burst_size', 'background_burst_size', 'background_sweep', 'fix_background_parameters'):
-                for side in SIDES:
-                    for band in BANDS:
-                        m.compute_background(band, side)
+                m.compute_all_backgrounds()
                 self._recompute_fft_and_display()
                 m.compute_all_beatf()
             else:
@@ -991,6 +1084,8 @@ class AppController(QObject):
             filters=m.filters,
             frequency_exclusions=m.frequency_exclusions,
             spectrogram_masks=m.spectrogram_masks,
+            used_bands=list(m.used_bands),
+            linearization_shot=m.linearization_reference_shot,
             burst_size=m.detector.burst_size,
             start_time=p.reconstruct.child('Start Time').value(),
             end_time=p.reconstruct.child('End Time').value(),

@@ -46,12 +46,17 @@ def build_reconstruction_kwargs(params):
         } for side in SIDES
     }
 
+    # The tables of another shot if the user chose so. Its folder is left to rpspy to find.
+    linearization_shot = params.shot if params.linearization_shot is None else params.linearization_shot
+    own_tables = linearization_shot == params.shot
+
     return dict(
         shot=params.shot,
         shotfile_dir=params.file_path,
-        linearization_shotfile_dir=params.file_path,
+        linearization_shotfile_dir=params.file_path if own_tables else None,
         sweep_linearization=DEFAULT_LINEARIZATION_SWEEP,
-        shot_linearization=params.shot,
+        shot_linearization=linearization_shot,
+        used_bands=params.used_bands,
         spectrogram_options=spectrogram_options,
         filters=filters,
         frequency_exclusions=frequency_exclusions,
