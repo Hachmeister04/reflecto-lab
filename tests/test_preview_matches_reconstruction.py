@@ -172,7 +172,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
             return m.compute_profile('R (m)', t)
 
     def check(self, m, cutoff):
-        (times, ne, r_hfs, r_lfs), per_band = self.reconstruct(m, cutoff)
+        (times, ne_hfs, ne_lfs, r_hfs, r_lfs), per_band = self.reconstruct(m, cutoff)
 
         grid = m.reconstruction_sweeps()
         np.testing.assert_array_equal(m.time_stamps[grid], times)     # same instants as the reconstruction
@@ -188,8 +188,8 @@ class PreviewMatchesReconstruction(unittest.TestCase):
                     np.testing.assert_allclose(bf.y_beat_time, group_delay[i], rtol=1e-9, atol=0)
 
             t = times[i]
-            for name, r_prev, ne_prev, r_rec in (('HFS', preview[0], preview[1], r_hfs[i]),
-                                                 ('LFS', preview[2], preview[3], r_lfs[i])):
+            for name, r_prev, ne_prev, r_rec, ne in (('HFS', preview[0], preview[1], r_hfs[i], ne_hfs),
+                                                     ('LFS', preview[2], preview[3], r_lfs[i], ne_lfs)):
                 with self.subTest(instant=i, side=name, what='profile'):
                     where = np.searchsorted(ne, ne_prev)
                     np.testing.assert_array_equal(ne[where], ne_prev)   # same density grid
@@ -219,7 +219,7 @@ class PreviewMatchesReconstruction(unittest.TestCase):
     def test_noisy_hfs_and_overlapping_bursts(self):
         m, cutoff = self.scenario_noisy_hfs_and_overlapping_bursts()
         r_hfs = self.check(m, cutoff)
-        f = np.linspace(0, 75e9, 151)
+        f = 0.5e9 * np.arange(r_hfs.shape[1])      # The frequency axis of the profiles: 0.5 GHz steps
         # Quiet Q-HFS: no HFS profile above 36 GHz, where there is something to show it is NaN
         self.assertTrue(np.isnan(r_hfs[:, f >= 36e9]).all())
         self.assertTrue(np.isfinite(r_hfs[:, f < 30e9]).any())
@@ -270,6 +270,53 @@ class PreviewMatchesReconstruction(unittest.TestCase):
                 shown = m.snap_to_reconstruction_grid(shown, previous=shown)
                 self.assertIn(shown, grid)
                 self.assertEqual(shown, int(grid[np.argmin(np.abs(grid - shown))]))
+
+
+class PreviewMatchesReconstructionWithW(PreviewMatchesReconstruction):
+    """The same checks on a shot that has the W band (LFS only, up to 102 GHz)."""
+
+    @classmethod
+    def make_shot(cls, root):
+        return make_synthetic_shot(root, with_w=True)
+
+    def test_w_is_a_band_of_the_shot(self):
+        m, _ = self.scenario_default()
+        self.assertIn(('W', 'LFS', 'complex'), [tuple(b) for b in m.available_bands])
+        self.assertEqual(m.bands_on_side('LFS'), ['K', 'Ka', 'Q', 'V', 'W'])
+        self.assertEqual(m.bands_on_side('HFS'), ['K', 'Ka', 'Q', 'V'])
+
+    def test_w_subtracts_dispersion_by_default_like_v(self):
+        m = self.ShotModel()
+        self.assertTrue(m.spect_params['LFS']['W'].subtract_dispersion)
+        self.assertTrue(m.spect_params['LFS']['V'].subtract_dispersion)
+        self.assertFalse(m.spect_params['LFS']['Q'].subtract_dispersion)
+
+    def test_the_lfs_profile_shown_goes_past_the_v_band(self):
+        m, cutoff = self.scenario_default()
+        t = m.time_stamps[int(m.reconstruction_sweeps()[1])]
+        preview = self.preview(m, int(m.reconstruction_sweeps()[1]))
+        r_lfs, ne_lfs = preview[2], preview[3]
+        r_hfs, ne_hfs = preview[0], preview[1]
+        self.assertGreater(ne_lfs.max(), 7.2e19, "LFS profile stops at the top of V")
+        self.assertLess(ne_hfs.max(), 7.1e19)
+        self.assertGreater(len(m.aggregated_lfs.f_probe), 0)
+        self.assertGreater(m.aggregated_lfs.f_probe.max(), 75.5e9)
+
+    def test_frequency_exclusions_can_be_set_on_w(self):
+        import constants
+        self.assertEqual((constants.FP_MIN, constants.FP_MAX), self.rpspy.EXCLUSION_FREQUENCY_LIMITS)
+        self.assertLessEqual(constants.FP_MIN, 17e9)
+        self.assertGreaterEqual(constants.FP_MAX, 102e9)
+
+    def test_each_side_is_shown_on_its_own_density_axis(self):
+        m, _ = self.scenario_default()
+        t = int(m.reconstruction_sweeps()[1])
+        with quiet():
+            m.detector.sweep = t
+            m.compute_current_fft(); m.compute_current_display(); m.compute_all_beatf()
+            m.compute_aggregated_delays(m.time_stamps[t])
+            profiles = m._invert_current()
+        self.assertEqual((len(profiles.ne_hfs), len(profiles.ne_lfs)), (151, 221))
 
 
 MISSING = (('Ka', 'LFS'), ('V', 'HFS'))

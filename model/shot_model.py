@@ -8,7 +8,6 @@ import rpspy
 from constants import (
     BANDS, SIDES,
     DEFAULT_LINEARIZATION_SWEEP,
-    PROFILE_INVERSION_RESOLUTION,
     DEFAULT_START_TIME, DEFAULT_END_TIME, DEFAULT_TIMESTEP, 
     DEFAULT_CUSTOM_DENSITY_CUTOFF, DEFAULT_DENSITY_CUTOFF, DEFAULT_CUSTOM_DENSITY_CUTOFF_MULTIPLIER
 )
@@ -474,13 +473,14 @@ class ShotModel:
 
         # Same discard of noisy HFS profiles as in the reconstruction
         rpspy.apply_qhfs_noise_filter(
-            self.shot, self.file_path, profiles.times, profiles.f, profiles.r_hfs, profiles.gds_hfs,
+            self.shot, self.file_path, profiles.times, profiles.f_hfs, profiles.r_hfs, profiles.gds_hfs,
         )
 
         out = []
-        for r, side in ((profiles.r_hfs[0], 'HFS'), (profiles.r_lfs[0], 'LFS')):
+        # Each side has its own density axis
+        for r, ne, side in ((profiles.r_hfs[0], profiles.ne_hfs, 'HFS'), (profiles.r_lfs[0], profiles.ne_lfs, 'LFS')):
             valid = np.isfinite(r)
-            r, ne = r[valid], profiles.ne[valid]
+            r, ne = r[valid], ne[valid]
             if coordinate_mode == 'rho-poloidal':
                 r = r_to_rho(timestamp, r, self.shot, side)
             out += [r, ne]
